@@ -19,6 +19,7 @@ import PwaDiagnostics from '../components/PwaDiagnostics';
 import UserProfileSection from '../components/UserProfileSection';
 import ProductTour from '../components/ProductTour';
 import AboutUsSection from '../components/AboutUsSection';
+import AiSupportChat from './components/AiSupportChat';
 import { toast } from 'sonner';
 import { translations } from './data/translations';
 import { APPS_DATA, WALLET_OPTIONS, MEDIA_RESOURCES, AppItem } from './data/storeData';
@@ -119,8 +120,8 @@ export default function App() {
   // Dynamic Shade Theme: 'dark' | 'light'
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
-  // Main Navigation Tabs: 'store' | 'sandbox' | 'media' | 'billing' | 'vscode' | 'client-dashboard'
-  const [activeTab, setActiveTab] = useState<'store' | 'sandbox' | 'media' | 'billing' | 'vscode' | 'client-dashboard'>('store');
+  // Main Navigation Tabs: 'store' | 'sandbox' | 'media' | 'billing' | 'vscode' | 'client-dashboard' | 'about'
+  const [activeTab, setActiveTab] = useState<'store' | 'sandbox' | 'media' | 'billing' | 'vscode' | 'client-dashboard' | 'about'>('store');
 
   // Mobile Navigation Drawer
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -211,9 +212,11 @@ export default function App() {
 
 
   const refreshStorageData = () => {
-    const loggedIn = storageService.isAdminLoggedIn();
-    setIsAdmin(loggedIn);
-    setProjects(storageService.getProjects(loggedIn));
+    const isAdminActive = storageService.isAdminLoggedIn();
+    setIsAdmin(isAdminActive);
+    setIsUserLoggedIn(storageService.isUserLoggedIn());
+    setCurrentUser(storageService.getCurrentUser());
+    setProjects(storageService.getProjects(isAdminActive));
     setAdminSettings(storageService.getSettings());
     setWallets(storageService.getWallets());
     
@@ -226,8 +229,21 @@ export default function App() {
   useEffect(() => {
     refreshStorageData();
     const unsubscribeAuth = subscribeToAuthChanges((user) => {
-      setIsUserLoggedIn(!!user);
-      setCurrentUser(user);
+      if (user) {
+        setIsUserLoggedIn(true);
+        setCurrentUser({
+          id: user.uid,
+          name: user.displayName || user.email?.split('@')[0] || 'User',
+          phone: '',
+          email: user.email,
+          createdAt: user.metadata.creationTime
+        });
+      } else {
+        // Fallback to local storage session for name/phone login
+        const localUser = storageService.getCurrentUser();
+        setIsUserLoggedIn(!!localUser);
+        setCurrentUser(localUser);
+      }
     });
 
     // Secret shortcut: Ctrl+Shift+A opens secret admin login
@@ -448,13 +464,16 @@ export default function App() {
             <div 
               onClick={() => {
                 setActiveTab('store');
+                handleLogoSecretClick();
               }}
               className="flex items-center gap-3 cursor-pointer group"
             >
-              <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 p-0.5 shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
-                <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center font-black text-white text-lg">
-                  LW
-                </div>
+              <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 p-0.5 shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform overflow-hidden">
+                <img 
+                  src="/assets/aistudio/image_69117c9b__1__7fdc7aea.jpg" 
+                  alt="Lern Web Logo" 
+                  className="w-full h-full object-cover rounded-[14px]"
+                />
               </div>
 
               <div className="space-y-0.5">
@@ -784,220 +803,129 @@ export default function App() {
 
         {/* TAB 6: CLIENT DASHBOARD & MODIFICATION REQUESTS STATUS TRACKER */}
         {activeTab === 'client-dashboard' && (
-          <div className="space-y-8 animate-fadeIn">
+          <div className="space-y-8 animate-fadeIn min-h-[500px]">
             {isUserLoggedIn ? (
-              <>
-                <div className="rounded-3xl border border-blue-500/40 bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 p-6 md:p-8 shadow-2xl space-y-4">
+              <div className="space-y-8">
+                {/* Dashboard Welcome Header */}
+                <div className="rounded-3xl border border-blue-500/40 bg-gradient-to-br from-slate-900 via-blue-900/20 to-slate-900 p-6 md:p-10 shadow-2xl space-y-4">
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase">
                         <User className="w-4 h-4" />
                         <span>{isRtl ? 'لوحة العميل الخاصة' : 'Client Account Portal'}</span>
                       </div>
-                      <h2 className="text-2xl md:text-3xl font-black text-white">
-                        {isRtl ? `مرحباً بك، ${currentUser?.name || 'عميلنا العزيز'}` : `Welcome back, ${currentUser?.name}`}
+                      <h2 className="text-3xl md:text-4xl font-black text-white">
+                        {isRtl ? `مرحباً بك، ${currentUser?.name || 'عميلنا العزيز'}` : `Welcome back, ${currentUser?.name || 'Valued Client'}`}
                       </h2>
                     </div>
 
                     <button
                       onClick={() => window.print()}
-                      className="no-print flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/20 transition"
+                      className="no-print flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/10 transition"
                     >
                       <Printer className="w-4 h-4" />
-                      <span>{isRtl ? 'طباعة تقرير التعديلات' : 'Print Status Report'}</span>
+                      <span>{isRtl ? 'طباعة تقرير الحالة' : 'Print Status Report'}</span>
                     </button>
                   </div>
-                  <p className="text-xs md:text-sm text-slate-300">
+                  <p className="text-sm md:text-base text-slate-300 max-w-2xl leading-relaxed">
                     {isRtl 
-                      ? 'من خلال هذه اللوحة يمكنك متابعة حالة طلبات التعديل، إدارة معلومات حسابك والتواصل مع الأدمن.'
-                      : 'Track your submitted AI customization drafts, update profile contact details, and view deployment stats.'}
+                      ? 'من خلال هذه اللوحة يمكنك متابعة حالة طلبات التعديل المرسلة للأدمن، إدارة بياناتك، والوصول السريع للدعم الفني.'
+                      : 'Track your AI customization requests, manage your contact details, and access priority technical support.'}
                   </p>
                 </div>
-                
-                {/* 'My Usage' Summary Widget: Quotas & Limits */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Rocket className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-bold text-slate-300">{isRtl ? 'حصة نشر المشاريع' : 'Project Deployment Quota'}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-slate-500">1 / 3</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: '33.33%' }} />
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      {isRtl ? 'لقد استهلكت مشروعاً واحداً من أصل 3 مشاريع مسموحة في باقتك الحالية.' : 'You have deployed 1 out of 3 allowed projects in your current plan.'}
-                    </p>
-                  </div>
 
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-purple-400" />
-                        <span className="text-xs font-bold text-slate-300">{isRtl ? 'حدود وقت المحاكي النشط' : 'Active Sandbox Runtime Limit'}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-slate-500">45 / 120 min</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-purple-500 rounded-full" style={{ width: '37.5%' }} />
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      {isRtl ? 'متبقي لك 75 دقيقة من البث المباشر للمحاكي هذا الشهر.' : '75 minutes of sandbox streaming runtime remaining this month.'}
-                    </p>
-                  </div>
-                </div>
+                {/* Main Dashboard Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Left Column: Status Tracker */}
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 md:p-8 shadow-xl space-y-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Rocket className="w-5 h-5 text-blue-400" />
+                        {isRtl ? 'سجل طلبات التعديل (AI Drafts)' : 'AI Customization History'}
+                      </h3>
 
-                {/* 5-Step Automated Booking & Deployment Workflow Visualizer */}
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 md:p-8 shadow-xl space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
-                        <Rocket className="w-4 h-4 text-blue-400" />
-                        <span>{isRtl ? 'مسار تفعيل ونشر المنصة (5 خطوات)' : '5-Step Provisioning Pipeline'}</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-400">
-                        {isRtl ? 'تتبع حالة طلبك من التخصيص حتى النشر المباشر على السيرفر' : 'Track your acquisition journey from AI customization to live deployment'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-400">
-                      <Clock className="w-3 h-3" />
-                      <span>{isRtl ? 'قيد المعالجة' : 'Processing'}</span>
-                    </div>
-                  </div>
-
-                  <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    {/* Connector Line (Desktop) */}
-                    <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-800 -translate-y-1/2 hidden md:block" />
-                    
-                    {[
-                      { id: 1, labelAr: 'تخصيص AI', labelEn: 'AI Customizer', status: 'completed' },
-                      { id: 2, labelAr: 'اختيار الترخيص', labelEn: 'License Selection', status: 'completed' },
-                      { id: 3, labelAr: 'تأكيد الدفع', labelEn: 'Payment Proof', status: 'current' },
-                      { id: 4, labelAr: 'أرشفة الكود', labelEn: 'Private Archiving', status: 'pending' },
-                      { id: 5, labelAr: 'النشر المباشر', labelEn: 'Live Provisioning', status: 'pending' }
-                    ].map((step) => (
-                      <div key={step.id} className="relative z-10 flex flex-row md:flex-col items-center gap-3 md:gap-2 flex-1">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
-                          step.status === 'completed' 
-                            ? 'bg-emerald-500 border-emerald-500 text-white' 
-                            : step.status === 'current'
-                            ? 'bg-blue-600 border-blue-600 text-white ring-4 ring-blue-500/20 animate-pulse'
-                            : 'bg-slate-900 border-slate-800 text-slate-500'
-                        }`}>
-                          {step.status === 'completed' ? <Check className="w-4 h-4" /> : step.id}
-                        </div>
-                        <div className="flex flex-col md:items-center">
-                          <span className={`text-[10px] md:text-xs font-bold ${
-                            step.status === 'pending' ? 'text-slate-500' : 'text-slate-200'
-                          }`}>
-                            {isRtl ? step.labelAr : step.labelEn}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Profile Management Section */}
-                <UserProfileSection
-                  currentUser={currentUser}
-                  userDraftsCount={userDrafts.length}
-                  lang={lang}
-                  onUserUpdated={(updatedUser) => setCurrentUser(updatedUser)}
-                />
-
-                {/* Visual Status Change Notification Banner */}
-                {userDrafts.some(d => d.status === 'completed' || d.status === 'in_progress' || d.status === 'approved_published') && (
-                  <div className="rounded-2xl bg-gradient-to-r from-emerald-900/40 via-blue-900/40 to-slate-900 border border-emerald-500/40 p-5 text-white flex items-center gap-4 shadow-xl animate-fadeIn">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                      <CheckCircle2 className="w-6 h-6 animate-bounce" />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-sm md:text-base font-bold text-emerald-300">
-                        {isRtl ? '🔔 إشعار تحديث حالة طلبات التعديل' : '🔔 Modification Request Status Update'}
-                      </h4>
-                      <p className="text-xs md:text-sm text-slate-300">
-                        {isRtl 
-                          ? 'قام المشرف العام بتحديث حالة طلباتك (مثل التحول إلى "قيد التنفيذ" أو "تم التنفيذ"). تفقد السجل أدناه لمعاينة التحديثات وملاحظات الأدمن.' 
-                          : 'The administrator has updated the status of your modification requests. Review the status logs below.'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 md:p-8 shadow-xl space-y-6">
-                  <h3 className="text-xl font-bold text-white">
-                    {isRtl ? 'سجل طلبات التعديل وحالة المراجعة' : 'Modification Request Status Tracker'}
-                  </h3>
-
-                  {userDrafts.length === 0 ? (
-                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center text-slate-400 space-y-2">
-                      <Sparkles className="w-8 h-8 text-slate-600 mx-auto" />
-                      <p className="text-sm font-semibold">{isRtl ? 'لم تقم بإرسال أي طلبات تعديل بعد' : 'No modification requests submitted yet'}</p>
-                      <p className="text-xs text-slate-500">{isRtl ? 'قم بتجربة أي تعديل داخل المحاكي ثم أرسل الطلب للأدمن.' : 'Use the AI customizer sandbox to submit a request.'}</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {userDrafts.map((draft) => (
-                        <div key={draft.id} className="print-card rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                          <div className="space-y-1.5 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                                draft.status === 'completed' || draft.status === 'approved_published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                                draft.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              }`}>
-                                {draft.status === 'completed' || draft.status === 'approved_published' ? (isRtl ? '✅ تم التنفيذ / منشور' : 'Completed / Published') :
-                                 draft.status === 'in_progress' ? (isRtl ? '⏳ قيد التنفيذ والبرمجة' : 'In Progress') : (isRtl ? '⌛ قيد المراجعة الفنية' : 'Pending Review')}
-                              </span>
-                              <span className="text-xs font-mono text-slate-400">{draft.forkedAt}</span>
-                            </div>
-
-                            <h4 className="text-base font-bold text-white">{draft.modifiedConfig.centerName}</h4>
-                            <p className="text-xs text-slate-300"><strong>{isRtl ? 'التعديل المطلوب:' : 'Prompt:'}</strong> "{draft.userPrompt}"</p>
-                            {draft.notes && (
-                              <p className="text-xs text-emerald-400 bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-500/30">
-                                <strong>{isRtl ? 'ملاحظة الأدمن:' : 'Admin Notes:'}</strong> {draft.notes}
-                              </p>
-                            )}
+                      {userDrafts.length === 0 ? (
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-12 text-center text-slate-500 space-y-4">
+                          <Sparkles className="w-12 h-12 text-slate-700 mx-auto opacity-50" />
+                          <div className="space-y-1">
+                            <p className="font-bold">{isRtl ? 'لا توجد طلبات مسجلة' : 'No requests yet'}</p>
+                            <p className="text-xs">{isRtl ? 'استخدم المحاكي لتخصيص منصتك وإرسالها للمراجعة.' : 'Use the Sandbox to customize and submit your first request.'}</p>
                           </div>
-
-                          <button
-                            onClick={() => {
-                              setSandboxConfig({
-                                centerName: draft.modifiedConfig.centerName,
-                                theme: draft.modifiedConfig.theme,
-                                activeCourse: draft.modifiedConfig.activeCourse,
-                                hasQuiz: draft.modifiedConfig.hasQuiz,
-                                bannerText: draft.modifiedConfig.bannerText,
-                                tutorName: 'العميل'
-                              });
-                              setActiveTab('sandbox');
-                            }}
-                            className="no-print rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-200 hover:text-white shrink-0"
-                          >
-                            {isRtl ? 'معاينة المسودة' : 'Preview Sandbox'}
-                          </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {userDrafts.map((draft) => (
+                            <div key={draft.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-4 transition-all hover:border-slate-700">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                    draft.status === 'completed' || draft.status === 'approved_published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                    draft.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  }`}>
+                                    {draft.status === 'completed' || draft.status === 'approved_published' ? (isRtl ? 'تم التنفيذ' : 'Completed') :
+                                     draft.status === 'in_progress' ? (isRtl ? 'قيد التنفيذ' : 'In Progress') : (isRtl ? 'قيد المراجعة' : 'Pending')}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-500">{draft.forkedAt}</span>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setSandboxConfig({
+                                      centerName: draft.modifiedConfig.centerName,
+                                      theme: draft.modifiedConfig.theme,
+                                      activeCourse: draft.modifiedConfig.activeCourse,
+                                      hasQuiz: draft.modifiedConfig.hasQuiz,
+                                      bannerText: draft.modifiedConfig.bannerText,
+                                      tutorName: currentUser?.name || 'العميل'
+                                    });
+                                    setActiveTab('sandbox');
+                                  }}
+                                  className="text-[10px] font-bold text-blue-400 hover:underline"
+                                >
+                                  {isRtl ? 'فتح في المحاكي ↗' : 'Open in Sandbox ↗'}
+                                </button>
+                              </div>
 
-                {/* Client Profile, Contact Info & Account Management (Logout & Deletion) */}
-                <UserProfileSection
-                  currentUser={currentUser}
-                  userDraftsCount={userDrafts.length}
-                  lang={lang}
-                  onUserUpdated={(updated) => setCurrentUser(updated)}
-                  onLogout={() => {
-                    refreshStorageData();
-                    setActiveTab('store');
-                    showToast(isRtl ? 'تم تسجيل الخروج من الحساب بنجاح' : 'Logged out successfully', 'success');
-                  }}
-                />
-              </>
+                              <div>
+                                <h4 className="font-bold text-slate-200">{draft.modifiedConfig.centerName}</h4>
+                                <p className="text-xs text-slate-400 mt-1 line-clamp-2 italic">"{draft.userPrompt}"</p>
+                              </div>
+
+                              {draft.notes && (
+                                <div className="bg-blue-500/5 border border-blue-500/20 p-3 rounded-xl">
+                                  <p className="text-[11px] text-blue-300">
+                                    <strong className="block mb-1 opacity-70">{isRtl ? 'ملاحظة الإدارة:' : 'Admin Note:'}</strong>
+                                    {draft.notes}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Profile & Stats */}
+                  <div className="space-y-6">
+                    <UserProfileSection
+                      currentUser={currentUser}
+                      userDraftsCount={userDrafts.length}
+                      lang={lang}
+                      onUserUpdated={(updated) => setCurrentUser(updated)}
+                      onLogout={() => {
+                        refreshStorageData();
+                        setActiveTab('store');
+                        showToast(isRtl ? 'تم تسجيل الخروج بنجاح' : 'Logged out successfully', 'success');
+                      }}
+                    />
+                    
+                    {/* Diagnostic Quick View */}
+                    <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+                       <PwaDiagnostics lang={lang} />
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-8 text-center space-y-4">
                 <User className="w-12 h-12 text-blue-400 mx-auto opacity-80" />
@@ -1019,11 +947,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Diagnostic PWA & Service Worker Capability View */}
-            <PwaDiagnostics lang={lang} />
-
-            {/* Embedded FAQ Section inside Client Dashboard */}
-            <FaqSection lang={lang} adminSettings={adminSettings} />
           </div>
         )}
       </main>
@@ -1140,7 +1063,7 @@ export default function App() {
       </div>
 
       {isAiChatOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-full max-w-sm animate-fadeIn">
+        <div className="fixed bottom-24 left-4 right-4 md:left-auto md:right-8 z-[9999] w-auto md:w-96 max-w-[calc(100vw-2rem)] shadow-2xl">
           <AiSupportChat lang={lang} currentUser={currentUser} />
         </div>
       )}

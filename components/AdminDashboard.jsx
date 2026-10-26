@@ -66,6 +66,18 @@ export default function AdminDashboard({
   const [uploadFileCategory, setUploadFileCategory] = useState('source_code_zip');
   const [uploadFileMetadata, setUploadFileMetadata] = useState('');
 
+  const refreshLocalData = () => {
+    setProjects(storageService.getProjects(true));
+    setSettings(storageService.getSettings());
+    setWallets(storageService.getWallets());
+    setAiDrafts(storageService.getAiDrafts());
+    setUsers(storageService.getUsers());
+    setPlans(storageService.getPlans());
+    setMediaResources(storageService.getMediaResources());
+    setReviews(storageService.getReviews());
+    setActivityLogs(storageService.getActivityLogs());
+  };
+
   const handleDownloadLocalFile = (file) => {
     if (!file) return;
     const a = document.createElement('a');
@@ -430,6 +442,7 @@ export default function AdminDashboard({
 
   const triggerSaveNotification = (msg) => {
     setSaveSuccessMsg(msg);
+    refreshLocalData();
     setTimeout(() => setSaveSuccessMsg(''), 3000);
     if (onRefreshData) onRefreshData();
   };
@@ -739,6 +752,14 @@ export default function AdminDashboard({
             >
               <LogOut className="w-4 h-4" />
               <span>{isRtl ? 'تسجيل الخروج' : 'Logout'}</span>
+            </button>
+
+            <button
+              onClick={refreshLocalData}
+              className="rounded-2xl border border-slate-700 bg-slate-800 p-2.5 text-blue-400 hover:text-white transition"
+              title={isRtl ? 'تحديث البيانات' : 'Refresh Data'}
+            >
+              <RefreshCw className="w-5 h-5" />
             </button>
 
             <button

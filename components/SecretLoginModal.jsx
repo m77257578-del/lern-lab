@@ -55,6 +55,8 @@ export default function SecretLoginModal({
     storageService.loginUser(visitorPhone, visitorName);
 
     setVisitorSuccess(true);
+    if (onLoginSuccess) onLoginSuccess();
+    
     setTimeout(() => {
       setVisitorSuccess(false);
       onClose();

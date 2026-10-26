@@ -2,6 +2,25 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import dotenv from 'dotenv';
+
+// Load environment variables from .env
+dotenv.config();
+
+const aiApiKey = process.env.GEMINI_API_KEY || '';
+if (!aiApiKey) {
+  console.warn('⚠️ WARNING: GEMINI_API_KEY is not set in process.env. AI features will likely fail.');
+}
+
+const ai = new GoogleGenAI({
+  apiKey: aiApiKey,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
 
 const dbFile = path.resolve(process.cwd(), 'lernweb_db.json');
 
@@ -530,6 +549,122 @@ async function startServer() {
       saveDb(db);
     }
     res.json({ success: true });
+  });
+
+  // AI Chat Route
+  app.post('/api/ai/chat', async (req, res) => {
+    try {
+      const { message, history, systemInstruction } = req.body;
+      if (!message) return res.status(400).json({ error: 'Message is required' });
+
+      if (!aiApiKey) {
+        throw new Error('GEMINI_API_KEY is missing from environment');
+      }
+
+      const contents = [];
+      if (history && Array.isArray(history)) {
+        history.forEach((msg: any) => {
+          if (msg.text && msg.sender) {
+            contents.push({
+              role: msg.sender === 'user' ? 'user' : 'model',
+              parts: [{ text: msg.text }]
+            });
+          }
+        });
+      }
+      
+      contents.push({
+        role: 'user',
+        parts: [{ text: message }]
+      });
+
+      const reqId = Date.now().toString().slice(-4);
+      console.log(`[AI Chat ${reqId}] Attempting with model: gemini-3-flash-preview`);
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction || "You are a helpful assistant.",
+          temperature: 0.7,
+        }
+      });
+
+      if (!response.text) {
+        throw new Error('Model returned an empty response');
+      }
+
+      console.log(`[AI Chat ${reqId}] Success`);
+      res.json({ text: response.text, _v: '3.1.2' });
+    } catch (err: any) {
+      console.error('AI Chat Error:', err.message || err);
+      const errorMsg = typeof err.details === 'string' ? err.details : JSON.stringify(err);
+      res.status(500).json({ 
+        error: 'AI connection failed', 
+        details: errorMsg,
+        _v: '3.1.2'
+      });
+    }
+  });
+
+  // AI Project Customization Route (For Sandbox)
+  app.post('/api/ai/customize', async (req, res) => {
+    try {
+      const { prompt, baseConfig } = req.body;
+      if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+
+      if (!aiApiKey) throw new Error('GEMINI_API_KEY missing');
+
+      const systemInstruction = `
+You are an expert software architect for "Lern Web". 
+Return strictly JSON:
+{
+  "explanationAr": "...",
+  "explanationEn": "...",
+  "theme": "ocean" | "midnight" | "emerald" | "amber",
+  "centerName": "...",
+  "activeCourse": "...",
+  "bannerText": "...",
+  "tutorName": "...",
+  "hasQuiz": true | false
+}
+`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `Base Config: ${JSON.stringify(baseConfig)}\n\nRequest: "${prompt}"` }]
+          }
+        ],
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const text = response.text || '';
+      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+
+      res.json({
+        success: true,
+        explanationAr: parsed.explanationAr || 'تم تحليل طلبك.',
+        explanationEn: parsed.explanationEn || 'Analyzed.',
+        suggestedConfig: {
+          centerName: parsed.centerName || baseConfig.centerName,
+          theme: ['ocean', 'midnight', 'emerald', 'amber'].includes(parsed.theme) ? parsed.theme : baseConfig.theme,
+          activeCourse: parsed.activeCourse || baseConfig.activeCourse,
+          hasQuiz: typeof parsed.hasQuiz === 'boolean' ? parsed.hasQuiz : baseConfig.hasQuiz,
+          bannerText: parsed.bannerText || baseConfig.bannerText,
+          tutorName: parsed.tutorName || baseConfig.tutorName
+        }
+      });
+    } catch (err: any) {
+      console.error('AI Customize Critical Failure:', err);
+      res.status(500).json({ error: 'Customization failed', details: err.message });
+    }
   });
 
   // Backup

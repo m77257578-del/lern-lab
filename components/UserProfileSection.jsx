@@ -13,7 +13,6 @@ import {
   Save, CheckCircle2, AlertCircle, Edit3, Clock, Sparkles, LogOut, Trash2
 } from 'lucide-react';
 import { storageService } from '../src/services/storageService';
-import AiSupportChat from './AiSupportChat';
 
 export default function UserProfileSection({ 
   currentUser, 
@@ -358,8 +357,6 @@ export default function UserProfileSection({
         </div>
       )}
 
-      {/* AI Support Chatbot Assistant */}
-      <AiSupportChat lang={lang} currentUser={currentUser} />
     </div>
   );
 }
