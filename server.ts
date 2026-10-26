@@ -25,6 +25,8 @@ const ai = new GoogleGenAI({
 const dbFile = path.resolve(process.cwd(), 'lernweb_db.json');
 
 interface DatabaseSchema {
+  version: number;
+  lastModified: number;
   projects: any[];
   settings: any;
   wallets: any[];
@@ -36,20 +38,26 @@ interface DatabaseSchema {
   reviews: any[];
   activity_logs: any[];
   chat_messages: any[];
+  support_tickets: any[];
 }
 
 function loadDb(): DatabaseSchema {
   try {
     if (fs.existsSync(dbFile)) {
       const content = fs.readFileSync(dbFile, 'utf-8');
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      if (!parsed.version) parsed.version = 1;
+      if (!parsed.lastModified) parsed.lastModified = Date.now();
+      return parsed;
     }
   } catch (e) {
     console.error('Error loading DB file:', e);
   }
 
   // Default initial data
-  return {
+  const initialDb: DatabaseSchema = {
+    version: 1,
+    lastModified: Date.now(),
     projects: [
       {
         id: 'lms-core-hub',
@@ -293,12 +301,23 @@ function loadDb(): DatabaseSchema {
         timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString()
       }
     ],
-    chat_messages: []
+    chat_messages: [],
+    support_tickets: []
   };
+
+  try {
+    fs.writeFileSync(dbFile, JSON.stringify(initialDb, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to initialize lernweb_db.json on disk:', err);
+  }
+
+  return initialDb;
 }
 
 function saveDb(data: DatabaseSchema) {
   try {
+    data.version = (data.version || 0) + 1;
+    data.lastModified = Date.now();
     fs.writeFileSync(dbFile, JSON.stringify(data, null, 2), 'utf-8');
   } catch (e) {
     console.error('Error saving DB file:', e);
@@ -310,6 +329,27 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
 
   let db = loadDb();
+
+  // Full cross-device sync endpoint
+  app.get('/api/sync', (req, res) => {
+    db = loadDb();
+    res.json({
+      version: db.version || 1,
+      lastModified: db.lastModified || Date.now(),
+      projects: db.projects,
+      settings: db.settings,
+      wallets: db.wallets,
+      plans: db.plans,
+      drafts: db.ai_drafts,
+      users: db.users,
+      media: db.media_resources,
+      orders: db.user_orders,
+      reviews: db.reviews,
+      logs: db.activity_logs,
+      chats: db.chat_messages || [],
+      tickets: db.support_tickets || []
+    });
+  });
 
   // API Routes
   app.get('/api/projects', (req, res) => {
@@ -551,6 +591,67 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Support Tickets API
+  app.get('/api/tickets', (req, res) => {
+    db = loadDb();
+    res.json(db.support_tickets || []);
+  });
+
+  app.post('/api/tickets', (req, res) => {
+    db = loadDb();
+    if (!db.support_tickets) db.support_tickets = [];
+    const ticket = req.body;
+    const index = db.support_tickets.findIndex(t => t.id === ticket.id);
+    if (index !== -1) {
+      db.support_tickets[index] = ticket;
+    } else {
+      db.support_tickets.unshift(ticket);
+    }
+    saveDb(db);
+    res.json({ success: true, ticket });
+  });
+
+  app.delete('/api/tickets/:id', (req, res) => {
+    db = loadDb();
+    if (db.support_tickets) {
+      db.support_tickets = db.support_tickets.filter(t => t.id !== req.params.id);
+      saveDb(db);
+    }
+    res.json({ success: true });
+  });
+
+  // Robust Multi-Model AI Generator with Exponential Backoff and Attempt Timeout
+  async function generateAiContentWithRetry(params: any, retries = 1) {
+    const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    let lastError: any = null;
+
+    const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error(`AI generation timed out after ${ms}ms`)), ms));
+
+    for (const model of candidateModels) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const apiCall = ai.models.generateContent({
+            ...params,
+            model
+          });
+
+          const response: any = await Promise.race([apiCall, timeoutPromise(8000)]);
+          if (response && response.text) {
+            return response;
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[AI] Model ${model} attempt ${attempt + 1} encountered:`, err?.message || err);
+          if (attempt < retries) {
+            const delay = Math.min(500 * Math.pow(2, attempt) + Math.random() * 200, 2000);
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+    }
+    throw lastError || new Error('All AI models failed to respond');
+  }
+
   // AI Chat Route
   app.post('/api/ai/chat', async (req, res) => {
     try {
@@ -578,14 +679,37 @@ async function startServer() {
         parts: [{ text: message }]
       });
 
-      const reqId = Date.now().toString().slice(-4);
-      console.log(`[AI Chat ${reqId}] Attempting with model: gemini-3-flash-preview`);
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+      const defaultSystemInstruction = `
+أنت "المساعد الذكي الرسمي لمنصة ليرن ويب (Lern Web AI)".
+طبيعتك وأسلوبك:
+- تجيب ببراعة بجميع اللغات واللهجات، وبشكل خاص باللهجة العامية المصرية الودودة واللبقة والأصيلة (المصرية الدارجة الراقية).
+- إذا تحدث العميل بالعامية المصرية أو الفصحى أو الإنجليزية، تجاوبه فوراً بنفس الأسلوب واللغة.
+- إجاباتك دقيقة وواضحة، مفيدة وكاملة وتساعد المعلم وصاحب السنتر على اتخاذ قراره.
+
+معلومات منصة ليرن ويب (Lern Web):
+1. التعريف: المنظومة التعليمية السحابية المتكاملة لإدارة المراكز التعليمية والسناتر والمدارس والمدرسين الخصوصيين.
+2. باقات الاشتراك والأسعار:
+   - الاشتراك الشهري المرن: 950 ج.م / $29 شهرياً (بدون التزام طويل).
+   - الترخيص السنوي المتقدم: 8,500 ج.م / $249 سنوياً (الأكثر طلباً، نطاق خاص، سعة غير محدودة، دعم أولوية VIP).
+   - التملك الكامل للكود المصدري (White-Label Buyout): 27,000 ج.م / $799 دفعة واحدة فقط مدى الحياة بدون أي اشتراكات متكررة.
+3. طرق الدفع المعتمدة:
+   - فودافون كاش (Vodafone Cash): 01024889921
+   - أورانج كاش (Orange Cash): 01224889921
+   - انستاباي (InstaPay IPN): lernweb@instapay
+4. أهم الخصائص التقنية والتشغيلية:
+   - نظام الحضور الذكي QR Gate Check-in في أقل من 200 مللي ثانية مع إشعار ولي الأمر.
+   - محرك الاختبارات الذكية الآمنة Proctor AI لمنع الغش وتأمين المتصفح وتصحيح ذكي للأسئلة.
+   - محاكي Sandbox التفاعلي لتجربة المنصة وتخصيص اسمها وشعارها وألوانها فوراً في المتصفح.
+   - دعم كامل لتطبيقات الهواتف والعمل أوفلاين بمحرك PWA الحديث.
+   - تملك كامل للكود المصدري Next.js مع قواعد بيانات سحابية وتكامل كامل.
+   - دعم فني متواصل عبر واتساب والبريد.
+لا تظهر أي أخطاء جافة، واحرص على الترحيب بالعميل وتقديم المساعدة الصادقة والسريعة دائماً.
+`;
+
+      const response = await generateAiContentWithRetry({
         contents: contents,
         config: {
-          systemInstruction: systemInstruction || "You are a helpful assistant.",
+          systemInstruction: systemInstruction || defaultSystemInstruction,
           temperature: 0.7,
         }
       });
@@ -594,15 +718,14 @@ async function startServer() {
         throw new Error('Model returned an empty response');
       }
 
-      console.log(`[AI Chat ${reqId}] Success`);
-      res.json({ text: response.text, _v: '3.1.2' });
+      res.json({ text: response.text, _v: '3.8.0' });
     } catch (err: any) {
       console.error('AI Chat Error:', err.message || err);
-      const errorMsg = typeof err.details === 'string' ? err.details : JSON.stringify(err);
+      const errorMsg = typeof err.details === 'string' ? err.details : (err.message || JSON.stringify(err));
       res.status(500).json({ 
         error: 'AI connection failed', 
         details: errorMsg,
-        _v: '3.1.2'
+        _v: '3.8.0'
       });
     }
   });
@@ -630,8 +753,7 @@ Return strictly JSON:
 }
 `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+      const response = await generateAiContentWithRetry({
         contents: [
           {
             role: 'user',

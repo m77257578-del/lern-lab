@@ -9,7 +9,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Layers, Play, Video, ShieldCheck, Sun, Moon, 
   Globe, Download, Smartphone, Code2, ArrowUpRight,
-  CheckCircle2, Menu, X, Share2, Terminal, Copy, Check, Lock, User, Sparkles, Printer, BarChart3, Rocket, Clock, Bot
+  CheckCircle2, Menu, X, Share2, Terminal, Copy, Check, Lock, User, Sparkles, Printer, BarChart3, Rocket, Clock, Bot, LogOut
 } from 'lucide-react';
 
 import AppStore from '../components/AppStore';
@@ -19,12 +19,15 @@ import PwaDiagnostics from '../components/PwaDiagnostics';
 import UserProfileSection from '../components/UserProfileSection';
 import ProductTour from '../components/ProductTour';
 import AboutUsSection from '../components/AboutUsSection';
+import AdminDashboard from '../components/AdminDashboard';
+import SecretLoginModal from '../components/SecretLoginModal';
 import AiSupportChat from './components/AiSupportChat';
 import { toast } from 'sonner';
 import { translations } from './data/translations';
 import { APPS_DATA, WALLET_OPTIONS, MEDIA_RESOURCES, AppItem } from './data/storeData';
+import { storageService, buildWhatsAppUrl, ProjectItem, AdminSettings, WalletConfig, MediaResourceItem, AiCustomizationDraft } from './services/storageService';
+import { subscribeToAuthChanges, signOutUser } from './services/firebaseService';
 
-// Raw file representations for instant uncompressed VS Code copying & inspection
 const VSCODE_CODE_CATALOG: Record<string, { lang: string; title: string; code: string }> = {
   'app/page.jsx': {
     lang: 'javascript',
@@ -47,28 +50,8 @@ import SandboxPreview from '@/components/SandboxPreview';
 
 export default function Page() {
   const [theme, setTheme] = useState('dark');
-  // Product Tour State
-  const [showTour, setShowTour] = useState(false);
-
-  useEffect(() => {
-    if (activeTab === 'client-dashboard' && isUserLoggedIn && !localStorage.getItem('hasSeenTour')) {
-      setShowTour(true);
-    }
-  }, [activeTab, isUserLoggedIn]);
-
   return (
     <div className={theme === 'dark' ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}>
-      
-      {/* Product Tour Overlay */}
-      {showTour && (
-        <ProductTour 
-          lang={lang} 
-          onClose={() => {
-            setShowTour(false);
-            localStorage.setItem('hasSeenTour', 'true');
-          }}
-        />
-      )}
       <AppStore />
     </div>
   );
@@ -100,49 +83,32 @@ export default function RootLayout({ children }) {
   }
 };
 
-import AdminDashboard from '../components/AdminDashboard';
-import SecretLoginModal from '../components/SecretLoginModal';
-import { storageService, buildWhatsAppUrl, ProjectItem, AdminSettings, WalletConfig, MediaResourceItem, AiCustomizationDraft } from './services/storageService';
-import { subscribeToAuthChanges, signOutUser } from './services/firebaseService';
-
-
 export default function App() {
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     if (type === 'success') toast.success(message);
     else toast.error(message);
   }, []);
 
-  // Bilingual State: 'ar' (RTL default) | 'en' (LTR)
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const t = translations[lang] || translations.ar;
   const isRtl = lang === 'ar';
 
-  // Dynamic Shade Theme: 'dark' | 'light'
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-
-  // Main Navigation Tabs: 'store' | 'sandbox' | 'media' | 'billing' | 'vscode' | 'client-dashboard' | 'about'
   const [activeTab, setActiveTab] = useState<'store' | 'sandbox' | 'media' | 'billing' | 'vscode' | 'client-dashboard' | 'about'>('store');
-
-  // Mobile Navigation Drawer
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // Active Sandbox Configuration for Cross-Component Provisioning
   const [sandboxConfig, setSandboxConfig] = useState<any>(null);
 
-  // Admin Master State (Secret Login with password 100100)
+  // Admin Master State
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSecretLoginOpen, setIsSecretLoginOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
-  
-  // Logo 5 clicks in 3 seconds gesture
   const [logoClickTimes, setLogoClickTimes] = useState<number[]>([]);
-  
-  // AI Chat Toggle
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
 
-  // User Auth State
+  // Client Authentication State
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isClientLoginOpen, setIsClientLoginOpen] = useState(false);
   const [showTour, setShowTour] = useState(false);
 
   useEffect(() => {
@@ -152,16 +118,12 @@ export default function App() {
   }, [activeTab, isUserLoggedIn]);
 
   const [userDrafts, setUserDrafts] = useState<AiCustomizationDraft[]>(() => storageService.getAiDrafts());
-
-  // Track draft status changes for automatic client notifications
   const prevDraftStatuses = useRef<Record<string, string>>({});
 
   useEffect(() => {
     if (isUserLoggedIn && userDrafts.length > 0) {
       userDrafts.forEach((draft) => {
         const prevStatus = prevDraftStatuses.current[draft.id];
-        
-        // If we have a previous status and it's different from the current one
         if (prevStatus && prevStatus !== draft.status) {
           const statusMapAr: Record<string, string> = {
             'pending_review': 'قيد المراجعة الفنية',
@@ -177,30 +139,22 @@ export default function App() {
             'approved_published': 'Approved & Published',
             'rejected': 'Rejected / Needs Review'
           };
-
           const statusLabel = isRtl ? statusMapAr[draft.status] : statusMapEn[draft.status];
-          
           let details = isRtl 
             ? `🔔 تحديث حالة: طلبك "${draft.modifiedConfig.centerName}" أصبح الآن [${statusLabel}]`
             : `🔔 Status Update: Your request "${draft.modifiedConfig.centerName}" is now [${statusLabel}]`;
-          
           if (draft.notes) {
             details += isRtl ? `\n\nملاحظة الإدارة: ${draft.notes}` : `\n\nAdmin Note: ${draft.notes}`;
           }
-
           showToast(details, 'success');
         }
-        
-        // Update the ref with current status
         prevDraftStatuses.current[draft.id] = draft.status;
       });
     } else if (!isUserLoggedIn) {
-      // Reset tracker on logout
       prevDraftStatuses.current = {};
     }
   }, [userDrafts, isUserLoggedIn, isRtl, showToast]);
 
-  // Persistent Projects, Settings, Wallets, Media
   const [projects, setProjects] = useState<ProjectItem[]>(() => storageService.getProjects(false));
   const [adminSettings, setAdminSettings] = useState<AdminSettings>(() => storageService.getSettings());
   const [wallets, setWallets] = useState<WalletConfig[]>(() => storageService.getWallets());
@@ -210,7 +164,6 @@ export default function App() {
   });
   const [plans, setPlans] = useState<any[]>(() => storageService.getPlans());
 
-
   const refreshStorageData = () => {
     const isAdminActive = storageService.isAdminLoggedIn();
     setIsAdmin(isAdminActive);
@@ -219,7 +172,6 @@ export default function App() {
     setProjects(storageService.getProjects(isAdminActive));
     setAdminSettings(storageService.getSettings());
     setWallets(storageService.getWallets());
-    
     const storedMedia = storageService.getMediaResources();
     setMediaItems(storedMedia.length > 0 ? storedMedia : (MEDIA_RESOURCES as any[]));
     setPlans(storageService.getPlans());
@@ -228,6 +180,12 @@ export default function App() {
 
   useEffect(() => {
     refreshStorageData();
+    storageService.syncNow();
+
+    const unsubscribeStorage = storageService.subscribe(() => {
+      refreshStorageData();
+    });
+
     const unsubscribeAuth = subscribeToAuthChanges((user) => {
       if (user) {
         setIsUserLoggedIn(true);
@@ -239,14 +197,12 @@ export default function App() {
           createdAt: user.metadata.creationTime
         });
       } else {
-        // Fallback to local storage session for name/phone login
         const localUser = storageService.getCurrentUser();
         setIsUserLoggedIn(!!localUser);
         setCurrentUser(localUser);
       }
     });
 
-    // Secret shortcut: Ctrl+Shift+A opens secret admin login
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
         e.preventDefault();
@@ -254,10 +210,8 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    
-    // Anti-Piracy: Disable Right-Click
+
     const handleContextMenu = (e: MouseEvent) => {
-      // Allow right-click on specific elements if needed, otherwise block
       if (!(e.target as HTMLElement).closest('input, textarea, pre, code')) {
         e.preventDefault();
       }
@@ -268,38 +222,48 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('contextmenu', handleContextMenu);
       unsubscribeAuth();
+      unsubscribeStorage();
     };
   }, []);
 
-  // Strict: 5 clicks on logo within 3 seconds opens Admin Portal
-  const handleLogoSecretClick = () => {
+  const handleLogoSecretClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const now = Date.now();
-    const recent = [...logoClickTimes.filter((tVal) => now - tVal < 3000), now];
+    const recent = [...logoClickTimes.filter((tVal) => now - tVal < 2500), now];
     setLogoClickTimes(recent);
-    if (recent.length >= 5) {
+    if (recent.length >= 3) {
       setIsSecretLoginOpen(true);
       setLogoClickTimes([]);
+      showToast(isRtl ? '🔐 تم تفعيل بوابة المشرف العام السرية' : '🔐 Secret Admin Gate Unlocked', 'success');
     }
   };
 
-  // PWA Install State
+  const handleClientLogout = async () => {
+    try {
+      await signOutUser();
+    } catch (e) {
+      console.warn('Firebase signout skipped', e);
+    }
+    storageService.logoutUser();
+    setIsUserLoggedIn(false);
+    setCurrentUser(null);
+    setActiveTab('store');
+    showToast(isRtl ? 'تم تسجيل الخروج بنجاح' : 'Logged out successfully', 'success');
+  };
+
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
-
-  // VS Code Source Code Viewer
   const [activeVsCodeFile, setActiveVsCodeFile] = useState('app/page.jsx');
   const [hasCopiedFile, setHasCopiedFile] = useState(false);
 
-  // Compute effective theme based on Admin System Preferences setting
   const effectiveTheme = adminSettings?.themeMode === 'dark' 
     ? 'dark' 
     : adminSettings?.themeMode === 'light' 
       ? 'light' 
       : theme;
 
-  // Sync HTML tag attributes for RTL and Theme
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
@@ -313,7 +277,6 @@ export default function App() {
     }
   }, [lang, isRtl, effectiveTheme]);
 
-  // PWA Prompt Detection
   useEffect(() => {
     const isStandalone = 
       window.matchMedia('(display-mode: standalone)').matches || 
@@ -359,19 +322,27 @@ export default function App() {
     }
   };
 
-  const handleLaunchAppInSandbox = (app: AppItem) => {
-    if (app && app.defaultSandboxConfig) {
+  const handleLaunchAppInSandbox = (itemOrConfig: any) => {
+    if (!itemOrConfig) return;
+
+    if (itemOrConfig.category && itemOrConfig.centerName) {
+      setSandboxConfig(itemOrConfig);
+    } else if (itemOrConfig.defaultSandboxConfig) {
       setSandboxConfig({
-        centerName: isRtl ? app.titleAr : app.titleEn,
-        theme: app.defaultSandboxConfig.theme,
-        activeCourse: isRtl ? app.defaultSandboxConfig.activeCourse : app.titleEn,
-        bannerText: isRtl ? app.defaultSandboxConfig.bannerText : 'Active runtime deployment configured',
+        category: itemOrConfig.category || 'lms',
+        centerName: isRtl ? itemOrConfig.titleAr : itemOrConfig.titleEn,
+        theme: itemOrConfig.defaultSandboxConfig.theme,
+        activeCourse: isRtl ? itemOrConfig.defaultSandboxConfig.activeCourse : itemOrConfig.titleEn,
+        bannerText: isRtl ? itemOrConfig.defaultSandboxConfig.bannerText : 'Active runtime deployment configured',
         activeTab: 'courses',
         studentCount: 850,
-        tutorName: 'د. ليرن ويب الأكاديمي',
-        hasQuiz: app.defaultSandboxConfig.hasQuiz
+        tutorName: 'فريق ليرن ويب التقني',
+        hasQuiz: itemOrConfig.defaultSandboxConfig.hasQuiz
       });
+    } else {
+      setSandboxConfig(itemOrConfig);
     }
+
     setActiveTab('sandbox');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -389,13 +360,12 @@ export default function App() {
         : 'bg-slate-50 text-slate-900'
     }`}>
       
-      {/* 0. Secret Master Admin Operational Banner (Active when logged in with 100100) */}
       {isAdmin && (
         <div className="no-print bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 border-b border-blue-400/40 px-4 py-2.5 text-white flex flex-col sm:flex-row items-center justify-between gap-3 text-xs md:text-sm shadow-xl z-50 sticky top-0">
           <div className="flex items-center gap-2">
             <span className="flex h-3 w-3 rounded-full bg-emerald-400 ring-4 ring-emerald-500/30 animate-pulse" />
             <span className="font-bold">👑 {isRtl ? 'وضع تحكم المشرف العام نشط (Master Mode)' : 'Master Admin Mode Active'}:</span>
-            <span className="text-slate-200 hidden md:inline">{isRtl ? 'لك الصلاحية الكاملة لإدارة المنصة، حذف المحتوى، واعتماد مسودات الزوار' : 'Full master access active'}</span>
+            <span className="text-slate-200 hidden md:inline">{isRtl ? 'إدارة المشاريع، استعراض مسودات الذكاء الاصطناعي وتنزيل الملفات المنسوخة' : 'Full master access active'}</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -418,7 +388,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 1. Native PWA & App Installation Engine Banner */}
       {!isInstalled && (
         <aside aria-label="PWA install banner" className="no-print relative z-40 border-b border-blue-500/20 bg-gradient-to-r from-blue-950 via-indigo-950 to-blue-900 px-4 py-2.5 text-white shadow-md">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs md:text-sm">
@@ -451,7 +420,6 @@ export default function App() {
         </aside>
       )}
 
-      {/* Main Global Navigation Header (NO ADMIN BUTTONS IN HEADER OR FOOTER PER USER REQUEST) */}
       <header className={`no-print sticky ${isAdmin ? 'top-10' : 'top-0'} z-30 border-b backdrop-blur-xl transition-colors ${
         theme === 'dark' 
           ? 'border-slate-800/80 bg-slate-950/85' 
@@ -459,24 +427,25 @@ export default function App() {
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           
-          {/* Logo Brand Mark & Global AI Tool Badge */}
           <div className="flex items-center gap-4">
-            <div 
-              onClick={() => {
-                setActiveTab('store');
-                handleLogoSecretClick();
-              }}
-              className="flex items-center gap-3 cursor-pointer group"
-            >
-              <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 p-0.5 shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform overflow-hidden">
+            <div className="flex items-center gap-3 group">
+              <button 
+                type="button"
+                onClick={handleLogoSecretClick}
+                title={isRtl ? 'أيقونة المنصة (اضغط 3 مرات متتالية لدخول بوابة الأدمن السرية)' : 'Platform Icon (Click 3 consecutive times for Secret Admin Gate)'}
+                className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-blue-700 p-0.5 shadow-lg shadow-blue-500/20 group-hover:scale-105 active:scale-95 transition-transform overflow-hidden cursor-pointer select-none border-0 text-left shrink-0"
+              >
                 <img 
                   src="/assets/aistudio/image_69117c9b__1__7fdc7aea.jpg" 
                   alt="Lern Web Logo" 
-                  className="w-full h-full object-cover rounded-[14px]"
+                  className="w-full h-full object-cover rounded-[14px] pointer-events-none"
                 />
-              </div>
+              </button>
 
-              <div className="space-y-0.5">
+              <div 
+                onClick={() => setActiveTab('store')}
+                className="space-y-0.5 cursor-pointer"
+              >
                 <div className="flex items-center gap-2">
                   <span className="font-black text-lg md:text-xl tracking-tight text-white group-hover:text-blue-400 transition-colors">
                     ليرن ويب
@@ -486,19 +455,17 @@ export default function App() {
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 hidden sm:block">
-                  {isRtl ? 'المنظومة البرمجية الشاملة' : 'Universal Software Platform'}
+                  {isRtl ? 'محرر ومحاكي الذكاء الاصطناعي البرمجي' : 'AI Code Editor & Sandbox Suite'}
                 </p>
               </div>
             </div>
 
-            {/* Global AI Tool Badge */}
             <div className="hidden xl:flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-300">
               <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
-              <span>{isRtl ? 'أداة الذكاء الاصطناعي العامة' : 'LernWeb AI Engine'}</span>
+              <span>{isRtl ? 'محرر ومحاكي AI متطور' : 'AI Editor Engine'}</span>
             </div>
           </div>
 
-          {/* Desktop Navigation Links */}
           <nav className="hidden lg:flex items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/60 p-1.5">
             {[
               { id: 'store', label: t.navStore, icon: Layers },
@@ -529,7 +496,6 @@ export default function App() {
             })}
           </nav>
 
-          {/* Controls: WhatsApp, Language, Theme, User Sign In */}
           <div className="flex items-center gap-2 md:gap-3">
             {adminSettings.targetWhatsAppNumber && (
               <a
@@ -552,32 +518,41 @@ export default function App() {
 
             <button
               onClick={() => setTheme(effectiveTheme === 'dark' ? 'light' : 'dark')}
-              title={adminSettings?.themeMode && adminSettings.themeMode !== 'user' ? (isRtl ? 'إعدادات المنظومة: مظهر مفروض من الإدارة' : 'System Forced Theme') : undefined}
               className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-300 hover:text-white hover:border-slate-700 transition"
             >
               {effectiveTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
             </button>
 
-            {/* User Login / Account Button */}
-            <button
-              onClick={() => {
-                if (isUserLoggedIn) {
-                  setActiveTab('client-dashboard');
-                } else {
-                  setIsSecretLoginOpen(true);
-                }
-              }}
-              className="flex items-center gap-2 rounded-xl border border-blue-500/50 bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs md:text-sm font-bold text-white hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/30 transition active:scale-95"
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>
-                {isUserLoggedIn 
-                  ? (currentUser?.name || (isRtl ? 'حسابي' : 'My Account'))
-                  : (isRtl ? 'تسجيل دخول العميل' : 'Client Login')}
-              </span>
-            </button>
+            {isUserLoggedIn ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('client-dashboard')}
+                  className="flex items-center gap-2 rounded-xl border border-blue-500/50 bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs md:text-sm font-bold text-white hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/30 transition active:scale-95 cursor-pointer"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span className="max-w-[110px] truncate">{currentUser?.name || (isRtl ? 'لوحة العميل' : 'My Account')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClientLogout}
+                  title={isRtl ? 'تسجيل الخروج من الحساب' : 'Logout of Account'}
+                  className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-2 text-rose-300 hover:bg-rose-500/20 hover:border-rose-500/50 transition cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsClientLoginOpen(true)}
+                className="flex items-center gap-2 rounded-xl border border-blue-500/50 bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs md:text-sm font-bold text-white hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/30 transition active:scale-95 cursor-pointer"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'تسجيل دخول العميل' : 'Client Login'}</span>
+              </button>
+            )}
 
-            {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-300 hover:text-white"
@@ -587,23 +562,46 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
           <div className="lg:hidden border-t border-slate-800 bg-slate-950 p-4 space-y-3 animate-fadeIn">
-            <button
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                if (isUserLoggedIn) {
-                  setActiveTab('client-dashboard');
-                } else {
-                  setIsSecretLoginOpen(true);
-                }
-              }}
-              className="w-full flex items-center justify-center gap-2.5 rounded-xl py-3 text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md"
-            >
-              <User className="w-4 h-4" />
-              <span>{isUserLoggedIn ? (currentUser?.name || 'لوحة العميل') : (isRtl ? 'تسجيل دخول العميل' : 'Client Sign In')}</span>
-            </button>
+            {isUserLoggedIn ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setActiveTab('client-dashboard');
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md cursor-pointer"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="truncate">{currentUser?.name || (isRtl ? 'لوحة العميل' : 'Client Portal')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    handleClientLogout();
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>{isRtl ? 'خروج' : 'Logout'}</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsClientLoginOpen(true);
+                }}
+                className="w-full flex items-center justify-center gap-2.5 rounded-xl py-3 text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md cursor-pointer"
+              >
+                <User className="w-4 h-4" />
+                <span>{isRtl ? 'تسجيل دخول العميل' : 'Client Sign In'}</span>
+              </button>
+            )}
 
             <div className="space-y-1.5 pt-2 border-t border-slate-800">
               {[
@@ -639,10 +637,8 @@ export default function App() {
         )}
       </header>
 
-      {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10">
         
-        {/* TAB 1: AppStore */}
         {activeTab === 'store' && (
           <AppStore
             apps={projects as any}
@@ -653,18 +649,16 @@ export default function App() {
             isAdmin={isAdmin}
             isUserLoggedIn={isUserLoggedIn}
             adminSettings={adminSettings}
-            onOpenLogin={() => setIsSecretLoginOpen(true)}
+            onOpenLogin={() => setIsClientLoginOpen(true)}
             onOpenAdminPortal={() => setIsAdminDashboardOpen(true)}
             showToast={showToast}
           />
         )}
 
-        {/* TAB 2.5: About Us */}
         {activeTab === 'about' && (
           <AboutUsSection lang={lang} onClose={() => setActiveTab('store')} />
         )}
 
-        {/* TAB 2: Sandbox Preview */}
         {activeTab === 'sandbox' && (
           <SandboxPreview
             lang={lang}
@@ -676,13 +670,12 @@ export default function App() {
             targetWhatsAppNumber={adminSettings.targetWhatsAppNumber}
             isAdmin={isAdmin}
             isUserLoggedIn={isUserLoggedIn}
-            onOpenLogin={() => setIsSecretLoginOpen(true)}
+            onOpenLogin={() => setIsClientLoginOpen(true)}
             adminSettings={adminSettings}
             plans={plans}
           />
         )}
 
-        {/* TAB 3: Media Channels */}
         {activeTab === 'media' && (
           <div className="space-y-8 animate-fadeIn">
             <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 md:p-8 shadow-xl space-y-4">
@@ -728,7 +721,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: Billing */}
         {activeTab === 'billing' && (
           <div className="animate-fadeIn">
             <SandboxPreview
@@ -741,14 +733,13 @@ export default function App() {
               targetWhatsAppNumber={adminSettings.targetWhatsAppNumber}
               isAdmin={isAdmin}
               isUserLoggedIn={isUserLoggedIn}
-              onOpenLogin={() => setIsSecretLoginOpen(true)}
+              onOpenLogin={() => setIsClientLoginOpen(true)}
               adminSettings={adminSettings}
               plans={plans}
             />
           </div>
         )}
 
-        {/* TAB 5: VS Code Explorer */}
         {activeTab === 'vscode' && (
           <div className="space-y-6 animate-fadeIn">
             <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 md:p-8 shadow-xl space-y-3">
@@ -801,12 +792,10 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 6: CLIENT DASHBOARD & MODIFICATION REQUESTS STATUS TRACKER */}
         {activeTab === 'client-dashboard' && (
           <div className="space-y-8 animate-fadeIn min-h-[500px]">
             {isUserLoggedIn ? (
               <div className="space-y-8">
-                {/* Dashboard Welcome Header */}
                 <div className="rounded-3xl border border-blue-500/40 bg-gradient-to-br from-slate-900 via-blue-900/20 to-slate-900 p-6 md:p-10 shadow-2xl space-y-4">
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="space-y-1">
@@ -819,13 +808,25 @@ export default function App() {
                       </h2>
                     </div>
 
-                    <button
-                      onClick={() => window.print()}
-                      className="no-print flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/10 transition"
-                    >
-                      <Printer className="w-4 h-4" />
-                      <span>{isRtl ? 'طباعة تقرير الحالة' : 'Print Status Report'}</span>
-                    </button>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        onClick={() => window.print()}
+                        className="no-print flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/10 transition"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>{isRtl ? 'طباعة تقرير الحالة' : 'Print Status Report'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleClientLogout}
+                        className="no-print flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 hover:border-rose-500/60 transition cursor-pointer"
+                        title={isRtl ? 'تسجيل الخروج من الحساب' : 'Logout of Account'}
+                      >
+                        <LogOut className="w-4 h-4 text-rose-400" />
+                        <span>{isRtl ? 'تسجيل الخروج' : 'Log Out'}</span>
+                      </button>
+                    </div>
                   </div>
                   <p className="text-sm md:text-base text-slate-300 max-w-2xl leading-relaxed">
                     {isRtl 
@@ -834,9 +835,7 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Main Dashboard Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Left Column: Status Tracker */}
                   <div className="lg:col-span-2 space-y-6">
                     <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 md:p-8 shadow-xl space-y-6">
                       <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -905,21 +904,15 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Right Column: Profile & Stats */}
                   <div className="space-y-6">
                     <UserProfileSection
                       currentUser={currentUser}
                       userDraftsCount={userDrafts.length}
                       lang={lang}
                       onUserUpdated={(updated) => setCurrentUser(updated)}
-                      onLogout={() => {
-                        refreshStorageData();
-                        setActiveTab('store');
-                        showToast(isRtl ? 'تم تسجيل الخروج بنجاح' : 'Logged out successfully', 'success');
-                      }}
+                      onLogout={handleClientLogout}
                     />
                     
-                    {/* Diagnostic Quick View */}
                     <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
                        <PwaDiagnostics lang={lang} />
                     </div>
@@ -938,7 +931,7 @@ export default function App() {
                     : 'Sign in to access your personal modification requests and admin feedback.'}
                 </p>
                 <button
-                  onClick={() => setIsSecretLoginOpen(true)}
+                  onClick={() => setIsClientLoginOpen(true)}
                   className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-bold text-white hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-600/30 transition active:scale-95"
                 >
                   <User className="w-4 h-4" />
@@ -946,12 +939,11 @@ export default function App() {
                 </button>
               </div>
             )}
-
           </div>
         )}
+
       </main>
 
-      {/* Global iOS PWA Installation Guide Modal */}
       {showIOSModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn">
           <div className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-900 p-6 text-white space-y-4 shadow-2xl">
@@ -976,18 +968,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Product Tour Overlay */}
-      {showTour && (
-        <ProductTour 
-          lang={lang} 
-          onClose={() => {
-            setShowTour(false);
-            localStorage.setItem('hasSeenTour', 'true');
-          }}
-        />
-      )}
-
-      {/* Global Footer (NO ADMIN BUTTONS IN FOOTER PER USER REQUEST) */}
       <footer className="no-print mt-16 border-t border-slate-800/80 bg-slate-950 py-10 px-4 text-center text-xs text-slate-400 space-y-4">
         <div className="flex flex-wrap items-center justify-center gap-3">
           {(adminSettings.socialLinks.whatsapp || adminSettings.targetWhatsAppNumber) && (
@@ -1019,8 +999,8 @@ export default function App() {
 
         <p>
           {isRtl 
-            ? 'منظومة ليرن ويب | Lern Web التعليمية المتكاملة • ترخيص رقمي وتشغيل سحابي معتمد' 
-            : 'Lern Web Cloud Educational Ecosystem • Certified Digital Operation'}
+            ? 'منظومة ليرن ويب | Lern Web التعليمية المتكاملة • محرر ومحاكي الذكاء الاصطناعي البرمجي' 
+            : 'Lern Web Cloud Educational Ecosystem • AI Code Editor & Sandbox Suite'}
         </p>
 
         <div className="flex items-center justify-center gap-2 text-slate-500 text-[11px]">
@@ -1028,18 +1008,35 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Secret Admin Passcode Modal (Password 100100) */}
       <SecretLoginModal
-        isOpen={isSecretLoginOpen}
-        onClose={() => setIsSecretLoginOpen(false)}
-        onLoginSuccess={() => {
+        isOpen={isClientLoginOpen}
+        mode="client"
+        initialTab="visitor"
+        onClose={() => setIsClientLoginOpen(false)}
+        onUserSuccess={(user: any) => {
           refreshStorageData();
-          setIsAdminDashboardOpen(true);
+          setIsUserLoggedIn(true);
+          setCurrentUser(user);
+          setActiveTab('client-dashboard');
+          showToast(isRtl ? `مرحباً بك يا ${user?.name || 'عميلنا العزيز'}! تم تسجيل الدخول بنجاح.` : `Welcome ${user?.name || 'Client'}! Signed in successfully.`, 'success');
         }}
         lang={lang}
       />
 
-      {/* Admin Master Control Dashboard */}
+      <SecretLoginModal
+        isOpen={isSecretLoginOpen}
+        mode="admin"
+        initialTab="admin"
+        onClose={() => setIsSecretLoginOpen(false)}
+        onAdminSuccess={() => {
+          refreshStorageData();
+          setIsAdmin(true);
+          setIsAdminDashboardOpen(true);
+          showToast(isRtl ? 'تم فتح لوحة تحكم المشرف العام بنجاح.' : 'Admin Dashboard unlocked.', 'success');
+        }}
+        lang={lang}
+      />
+
       {isAdminDashboardOpen && (
         <AdminDashboard
           lang={lang}
@@ -1052,7 +1049,6 @@ export default function App() {
         />
       )}
 
-      {/* Floating AI Support Chatbot */}
       <div className="fixed bottom-6 right-6 z-50">
         <button
           onClick={() => setIsAiChatOpen(!isAiChatOpen)}

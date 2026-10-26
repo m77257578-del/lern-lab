@@ -1,8 +1,10 @@
 /**
  * Project: ليرن ويب | Lern Web
  * File: src/services/storageService.ts
- * Centralized persistent state manager connected to backend API.
+ * Centralized persistent state manager connected to backend API and Firestore real-time listeners.
  */
+
+import { subscribeToProjects, subscribeToDrafts, subscribeToTickets, saveTicket as saveFirestoreTicket } from './firebaseService';
 
 export interface ProjectItem {
   id: string;
@@ -179,7 +181,8 @@ export interface UserOrder {
 
 export interface MediaResourceItem {
   id: string;
-  type: 'video' | 'doc';
+  type: 'video' | 'doc' | 'image';
+  mediaSourceType?: 'youtube_url' | 'youtube_embed' | 'local_video' | 'image_url' | 'local_image';
   titleAr: string;
   titleEn: string;
   durationOrReadTimeAr: string;
@@ -191,6 +194,8 @@ export interface MediaResourceItem {
   contentAr: string;
   contentEn: string;
   videoUrl?: string;
+  imageUrl?: string;
+  embedCode?: string;
   thumbnailBg: string;
   isPublished: boolean;
 }
@@ -226,7 +231,122 @@ export interface ChatMessage {
   isAdminReply?: boolean;
 }
 
-let cachedProjects: ProjectItem[] = [];
+export interface SupportTicketMessage {
+  id: string;
+  sender: 'user' | 'ai' | 'admin';
+  senderName?: string;
+  text: string;
+  timestamp: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhone?: string;
+  userEmail?: string;
+  status: 'open' | 'in_progress' | 'closed';
+  systemOverride?: string;
+  createdAt: string;
+  updatedAt: string;
+  unreadByAdmin?: boolean;
+  unreadByUser?: boolean;
+  messages: SupportTicketMessage[];
+}
+
+const DEFAULT_INITIAL_PROJECTS: ProjectItem[] = [
+  {
+    id: 'lms-core-hub',
+    category: 'lms',
+    titleAr: 'منظومة إدارة المراكز والسناتر التعليمية (LMS Core)',
+    titleEn: 'LMS Core Educational Center Manager',
+    badgeAr: 'النظام الأساسي المعتمد',
+    badgeEn: 'Certified Flagship LMS',
+    taglineAr: 'بوابة إلكترونية متكاملة لإدارة الحصص، مجموعات الطلاب، الجداول وسجلات الحضور والغياب للسناتر الكبرى والمدرسين.',
+    taglineEn: 'Complete cloud platform for orchestrating classroom sessions, student cohorts, schedules, and fee ledgers.',
+    descriptionAr: 'منظومة LMS Core صُممت خصيصاً لمواءمة المتطلبات التشغيلية الواقعية للمراكز التعليمية والسناتر.',
+    descriptionEn: 'Engineered specifically for tutoring centers and academies.',
+    version: 'v3.8.2',
+    developer: 'Lern Web Systems & Lab',
+    rating: 4.9,
+    reviewsCount: 312,
+    accentColor: '#3b82f6',
+    isPublished: false,
+    featuresAr: [
+      'لوحة قيادة تفاعلية للمعلمين والإداريين تدعم تعدد الفروع والقاعات',
+      'توليد بطاقات QR ذكية لكل طالب لسرعة تسجيل الحضور عند بوابات السنتر',
+      'بوابة دفع مدمجة تدعم فودافون كاش، انستاباي، والتحويلات المباشرة'
+    ],
+    featuresEn: [
+      'Multi-branch administrative dashboard managing physical classrooms and online hubs',
+      'Instant student smart QR badge generation for millisecond gate check-in',
+      'Integrated payment gateway supporting mobile wallets'
+    ],
+    techStack: ['Next.js 14', 'Tailwind CSS', 'Vercel Edge', 'SQLite / Cloud SQL', 'PWA Engine'],
+    priceMonthly: '950 ج.م / $29',
+    priceAnnual: '8,500 ج.م / $249',
+    priceFull: '27,000 ج.م / $799',
+    sourceCode: '// LMS Core Knowledge Base',
+    fileData: [],
+    secretFiles: [
+      {
+        name: 'كود السورس كود الأصلي (Full Next.js Repo)',
+        type: 'github',
+        urlOrNotes: 'git@github.com:lernweb-private/lms-core-master.git (مستودع خاص - متاح للأدمن فقط)',
+        updatedAt: '2026-10-24'
+      }
+    ],
+    screenshots: [
+      { titleAr: 'لوحة إدارة الفروع والطلاب', titleEn: 'Branch & Student Ledger', bgGradient: 'from-blue-900 to-indigo-950', mockupType: 'dashboard' }
+    ],
+    sandboxConfig: {
+      centerName: 'أكاديمية ليرن ويب المركزية',
+      theme: 'ocean',
+      activeCourse: 'كورس الرياضيات للثانوية العامة',
+      hasQuiz: true,
+      bannerText: 'تنبيه: بدأ التسجيل في المجموعات الجديدة للفصل الدراسي الثاني!',
+      tutorName: 'أ. د. كريم المنشاوي'
+    }
+  },
+  {
+    id: 'ai-exam-proctor',
+    category: 'ai',
+    titleAr: 'منصة الاختبارات الذكية والمراقبة الآلية (Proctor AI)',
+    titleEn: 'Proctor AI Smart Examination Suite',
+    badgeAr: 'ذكاء اصطناعي فوري',
+    badgeEn: 'Real-time AI Shield',
+    taglineAr: 'محرك تقييم فوري يمنع تسريب الاختبارات ويكشف محاولات الغش مع تصحيح ذكي للأسئلة.',
+    taglineEn: 'High-integrity testing engine featuring active anti-cheat safeguards and semantic open-ended grading.',
+    descriptionAr: 'منظومة Proctor AI تقدم تجربة اختبارات آمنة تماماً تدعم بنوك الأسئلة المتدرجة الصعوبة.',
+    descriptionEn: 'Resilient testing ecosystem equipped with algorithmic question randomization.',
+    version: 'v2.4.0',
+    developer: 'Cognitive Learner Inc.',
+    rating: 4.8,
+    reviewsCount: 184,
+    accentColor: '#8b5cf6',
+    isPublished: false,
+    featuresAr: ['تأمين كامل للمتصفح'],
+    featuresEn: ['Lockdown browser'],
+    techStack: ['WebAssembly', 'Next.js'],
+    priceMonthly: '1,200 ج.م / $39',
+    priceAnnual: '10,500 ج.م / $299',
+    priceFull: '32,000 ج.م / $950',
+    sourceCode: '// Proctor AI Exam Logic',
+    fileData: [],
+    secretFiles: [],
+    screenshots: [],
+    sandboxConfig: {
+      centerName: 'مركز التقييم والقياس الذكي',
+      theme: 'midnight',
+      activeCourse: 'اختبار تجريبي',
+      hasQuiz: true,
+      bannerText: 'الاختبار التجريبي مفتوح الآن',
+      tutorName: 'أ. د. سمير عبد الرحمن'
+    }
+  }
+];
+
+let cachedProjects: ProjectItem[] = [...DEFAULT_INITIAL_PROJECTS];
 let cachedSettings: AdminSettings | null = null;
 let cachedWallets: WalletConfig[] = [];
 let cachedPlans: SubscriptionPlan[] = [];
@@ -237,55 +357,133 @@ let cachedOrders: UserOrder[] = [];
 let cachedReviews: ProjectReview[] = [];
 let cachedLogs: ActivityLogItem[] = [];
 let cachedChats: ChatMessage[] = [];
+let cachedTickets: SupportTicket[] = [];
 
-export async function initializeStorageBackend() {
+let nodeAdminAuth = false;
+let nodeUserAuth: UserAccount | null = null;
+
+function safeFetch(url: string, options?: RequestInit) {
+  if (typeof window !== 'undefined') {
+    return fetch(url, options).catch(err => {
+      console.warn('Network call error:', err);
+    });
+  }
+  return Promise.resolve();
+}
+
+type StorageListener = () => void;
+const storageListeners = new Set<StorageListener>();
+
+export function subscribeToStorage(listener: StorageListener): () => void {
+  storageListeners.add(listener);
+  return () => {
+    storageListeners.delete(listener);
+  };
+}
+
+export function notifyStorageChange() {
+  storageListeners.forEach(listener => {
+    try {
+      listener();
+    } catch (err) {
+      console.error('Storage listener error:', err);
+    }
+  });
+}
+
+let lastSyncVersion = 0;
+let isSyncing = false;
+
+export async function syncStorageWithServer(): Promise<boolean> {
+  if (typeof window === 'undefined' || isSyncing) return false;
+  isSyncing = true;
   try {
-    const [p, s, w, pl, d, u, m, o, r, l, c] = await Promise.all([
-      fetch('/api/projects?includeUnpublished=true').then(res => res.json()).catch(() => []),
-      fetch('/api/settings').then(res => res.json()).catch(() => null),
-      fetch('/api/wallets').then(res => res.json()).catch(() => []),
-      fetch('/api/plans').then(res => res.json()).catch(() => []),
-      fetch('/api/drafts').then(res => res.json()).catch(() => []),
-      fetch('/api/users').then(res => res.json()).catch(() => []),
-      fetch('/api/media').then(res => res.json()).catch(() => []),
-      fetch('/api/orders').then(res => res.json()).catch(() => []),
-      fetch('/api/reviews').then(res => res.json()).catch(() => []),
-      fetch('/api/logs').then(res => res.json()).catch(() => []),
-      fetch('/api/chats').then(res => res.json()).catch(() => [])
-    ]);
+    const res = await fetch('/api/sync');
+    if (!res.ok) throw new Error('Sync failed with status ' + res.status);
+    const data = await res.json();
 
-    if (Array.isArray(p)) cachedProjects = p;
-    if (s && typeof s === 'object') cachedSettings = s;
-    if (Array.isArray(w)) cachedWallets = w;
-    if (Array.isArray(pl)) cachedPlans = pl;
-    if (Array.isArray(d)) cachedDrafts = d;
-    if (Array.isArray(u)) cachedUsers = u;
-    if (Array.isArray(m)) cachedMedia = m;
-    if (Array.isArray(o)) cachedOrders = o;
-    if (Array.isArray(r)) cachedReviews = r;
-    if (Array.isArray(l)) cachedLogs = l;
-    if (Array.isArray(c)) cachedChats = c;
+    if (Array.isArray(data.projects)) cachedProjects = data.projects;
+    if (data.settings && typeof data.settings === 'object') cachedSettings = data.settings;
+    if (Array.isArray(data.wallets)) cachedWallets = data.wallets;
+    if (Array.isArray(data.plans)) cachedPlans = data.plans;
+    if (Array.isArray(data.drafts)) cachedDrafts = data.drafts;
+    if (Array.isArray(data.users)) cachedUsers = data.users;
+    if (Array.isArray(data.media)) cachedMedia = data.media;
+    if (Array.isArray(data.orders)) cachedOrders = data.orders;
+    if (Array.isArray(data.reviews)) cachedReviews = data.reviews;
+    if (Array.isArray(data.logs)) cachedLogs = data.logs;
+    if (Array.isArray(data.chats)) cachedChats = data.chats;
+    if (Array.isArray(data.tickets)) cachedTickets = data.tickets;
+
+    if (data.version) lastSyncVersion = data.version;
+
+    notifyStorageChange();
+    return true;
   } catch (err) {
-    console.error('Failed to initialize storage backend:', err);
+    console.warn('Storage sync error:', err);
+    return false;
+  } finally {
+    isSyncing = false;
   }
 }
 
-initializeStorageBackend();
+export async function initializeStorageBackend() {
+  return await syncStorageWithServer();
+}
+
+// Automatically sync on load and attach real-time Firestore onSnapshot listeners for cross-device synchronization
+if (typeof window !== 'undefined') {
+  initializeStorageBackend();
+  try {
+    subscribeToProjects((projects) => {
+      if (projects && projects.length > 0) {
+        cachedProjects = projects as ProjectItem[];
+        notifyStorageChange();
+      }
+    });
+    subscribeToDrafts((drafts) => {
+      if (drafts) {
+        cachedDrafts = drafts as AiCustomizationDraft[];
+        notifyStorageChange();
+      }
+    });
+    subscribeToTickets((tickets) => {
+      if (tickets) {
+        cachedTickets = tickets as SupportTicket[];
+        notifyStorageChange();
+      }
+    });
+  } catch (err) {
+    console.warn('Firebase real-time listener initialization skipped:', err);
+  }
+}
 
 export const storageService = {
+  subscribe(listener: () => void): () => void {
+    return subscribeToStorage(listener);
+  },
+
+  async syncNow(): Promise<boolean> {
+    return await syncStorageWithServer();
+  },
+
   isAdminLoggedIn(): boolean {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('lernweb_admin_auth_session') === 'true';
+      return localStorage.getItem('lernweb_admin_auth_session') === 'true' || sessionStorage.getItem('lernweb_admin_auth_session') === 'true';
     }
-    return false;
+    return nodeAdminAuth;
   },
 
   loginAdmin(passcodeAttempt: string): boolean {
     const settings = this.getSettings();
     if (passcodeAttempt.trim() === (settings?.adminPasscode || '100100').trim()) {
       if (typeof window !== 'undefined') {
+        localStorage.setItem('lernweb_admin_auth_session', 'true');
         sessionStorage.setItem('lernweb_admin_auth_session', 'true');
+      } else {
+        nodeAdminAuth = true;
       }
+      notifyStorageChange();
       return true;
     }
     return false;
@@ -293,8 +491,12 @@ export const storageService = {
 
   logoutAdmin(): void {
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('lernweb_admin_auth_session');
       sessionStorage.removeItem('lernweb_admin_auth_session');
+    } else {
+      nodeAdminAuth = false;
     }
+    notifyStorageChange();
   },
 
   getProjects(includeUnpublished: boolean = false): ProjectItem[] {
@@ -304,8 +506,9 @@ export const storageService = {
 
   saveProjects(projects: ProjectItem[]): void {
     cachedProjects = projects;
+    notifyStorageChange();
     projects.forEach(p => {
-      fetch('/api/projects', {
+      safeFetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(p)
@@ -315,7 +518,8 @@ export const storageService = {
 
   addProject(newProject: ProjectItem): void {
     cachedProjects.unshift(newProject);
-    fetch('/api/projects', {
+    notifyStorageChange();
+    safeFetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProject)
@@ -324,7 +528,8 @@ export const storageService = {
 
   updateProject(updated: ProjectItem): void {
     cachedProjects = cachedProjects.map(p => p.id === updated.id ? updated : p);
-    fetch('/api/projects', {
+    notifyStorageChange();
+    safeFetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated)
@@ -333,7 +538,8 @@ export const storageService = {
 
   deleteProject(projectId: string): void {
     cachedProjects = cachedProjects.filter(p => p.id !== projectId);
-    fetch('/api/projects/' + projectId, { method: 'DELETE' }).catch(err => console.error(err));
+    notifyStorageChange();
+    safeFetch('/api/projects/' + projectId, { method: 'DELETE' }).catch(err => console.error(err));
   },
 
   togglePublishProject(projectId: string): boolean {
@@ -345,8 +551,9 @@ export const storageService = {
       }
       return p;
     });
+    notifyStorageChange();
 
-    fetch('/api/projects/' + projectId + '/publish', { method: 'PATCH' }).catch(err => console.error(err));
+    safeFetch('/api/projects/' + projectId + '/publish', { method: 'PATCH' }).catch(err => console.error(err));
     return newStatus;
   },
 
@@ -374,7 +581,8 @@ export const storageService = {
 
   saveSettings(settings: AdminSettings): void {
     cachedSettings = settings;
-    fetch('/api/settings', {
+    notifyStorageChange();
+    safeFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -427,7 +635,8 @@ export const storageService = {
 
   saveWallets(wallets: WalletConfig[]): void {
     cachedWallets = wallets;
-    fetch('/api/wallets', {
+    notifyStorageChange();
+    safeFetch('/api/wallets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(wallets)
@@ -440,7 +649,8 @@ export const storageService = {
 
   savePlans(plans: SubscriptionPlan[]): void {
     cachedPlans = plans;
-    fetch('/api/plans', {
+    notifyStorageChange();
+    safeFetch('/api/plans', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(plans)
@@ -468,7 +678,8 @@ export const storageService = {
 
   saveAiDraft(draft: AiCustomizationDraft): void {
     cachedDrafts.unshift(draft);
-    fetch('/api/drafts', {
+    notifyStorageChange();
+    safeFetch('/api/drafts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft)
@@ -477,9 +688,10 @@ export const storageService = {
 
   updateAiDraftStatus(draftId: string, newStatus: any, notes?: string): void {
     cachedDrafts = cachedDrafts.map(d => d.id === draftId ? { ...d, status: newStatus, notes: notes !== undefined ? notes : d.notes } : d);
+    notifyStorageChange();
     const target = cachedDrafts.find(d => d.id === draftId);
     if (target) {
-      fetch('/api/drafts/' + draftId, {
+      safeFetch('/api/drafts/' + draftId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, notes: target.notes })
@@ -488,16 +700,60 @@ export const storageService = {
   },
 
   getMediaResources(): MediaResourceItem[] {
+    const defaultInitialMedia: MediaResourceItem[] = [
+      {
+        id: 'media-yt-1',
+        type: 'video',
+        mediaSourceType: 'youtube_url',
+        titleAr: 'فيديو شرح المنظومة: كيفية إنشاء وتخصيص سنتر تعليمي في 3 دقائق',
+        titleEn: 'Quick Start: How to Setup Your LMS Center in 3 Minutes',
+        durationOrReadTimeAr: '05:40 دقيقة',
+        durationOrReadTimeEn: '05:40 mins',
+        categoryAr: 'فيديو شرح يوتيوب',
+        categoryEn: 'YouTube Instructional Video',
+        summaryAr: 'شرح مفصل لطريقة توجيه مساعد الذكاء الاصطناعي وتطبيق القوالب المجهزة.',
+        summaryEn: 'Detailed walk-through of AI prompting and template application.',
+        contentAr: 'شاهد في هذا الفيديو كيفية التحكم المباشر بكافة عناصر محاكي السنتر التعليمي من الموبايل أو الكمبيوتر.',
+        contentEn: 'Watch how to control the live center emulator in real time.',
+        videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+        thumbnailBg: 'from-blue-900 to-slate-900',
+        isPublished: true
+      },
+      {
+        id: 'media-img-1',
+        type: 'image',
+        mediaSourceType: 'image_url',
+        titleAr: 'مخطط معمارية المحاكي والربط بالاستضافة السحابية',
+        titleEn: 'Cloud Edge Architecture Infographic',
+        durationOrReadTimeAr: 'صورة توضيحية',
+        durationOrReadTimeEn: 'HD Diagram',
+        categoryAr: 'معمارية المنظومة',
+        categoryEn: 'Architecture Diagram',
+        summaryAr: 'انفوجرافيك يوضح الربط بين لوحة الإدارة ومحاكي الأجهزة الحية.',
+        summaryEn: 'Infographic highlighting live synchronization between admin and device viewports.',
+        contentAr: 'صورة توضيحية لآلية العمل بين الخادم ولوحة التحكم ومحاكي العرض على مختلف الأجهزة.',
+        contentEn: 'Detailed visual roadmap of the cloud infrastructure.',
+        imageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=80',
+        thumbnailBg: 'from-purple-900 to-slate-900',
+        isPublished: true
+      }
+    ];
+
+    if (!cachedMedia || cachedMedia.length === 0) {
+      cachedMedia = defaultInitialMedia;
+    }
     return cachedMedia;
   },
 
   saveMediaResources(items: MediaResourceItem[]): void {
     cachedMedia = items;
+    notifyStorageChange();
   },
 
   addMediaResource(item: MediaResourceItem): void {
     cachedMedia.unshift(item);
-    fetch('/api/media', {
+    notifyStorageChange();
+    safeFetch('/api/media', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(item)
@@ -506,7 +762,8 @@ export const storageService = {
 
   deleteMediaResource(id: string): void {
     cachedMedia = cachedMedia.filter(m => m.id !== id);
-    fetch('/api/media/' + id, { method: 'DELETE' }).catch(err => console.error(err));
+    notifyStorageChange();
+    safeFetch('/api/media/' + id, { method: 'DELETE' }).catch(err => console.error(err));
   },
 
   getUserOrders(): UserOrder[] {
@@ -515,7 +772,8 @@ export const storageService = {
 
   saveUserOrder(order: UserOrder): void {
     cachedOrders.unshift(order);
-    fetch('/api/orders', {
+    notifyStorageChange();
+    safeFetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(order)
@@ -532,7 +790,8 @@ export const storageService = {
 
   addReview(review: ProjectReview): void {
     cachedReviews.unshift(review);
-    fetch('/api/reviews', {
+    notifyStorageChange();
+    safeFetch('/api/reviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(review)
@@ -541,7 +800,8 @@ export const storageService = {
 
   deleteReview(reviewId: string): void {
     cachedReviews = cachedReviews.filter(r => r.id !== reviewId);
-    fetch('/api/reviews/' + reviewId, { method: 'DELETE' }).catch(err => console.error(err));
+    notifyStorageChange();
+    safeFetch('/api/reviews/' + reviewId, { method: 'DELETE' }).catch(err => console.error(err));
   },
 
   getUsers(): UserAccount[] {
@@ -551,7 +811,8 @@ export const storageService = {
   addUser(user: UserAccount): void {
     if (!cachedUsers.find(u => u.id === user.id)) {
       cachedUsers.push(user);
-      fetch('/api/users', {
+      notifyStorageChange();
+      safeFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(user)
@@ -559,19 +820,22 @@ export const storageService = {
     }
   },
 
-  loginUser(phone: string, name: string): UserAccount {
+  loginUser(phone: string, name: string, email?: string): UserAccount {
     let user = cachedUsers.find(u => u.phone === phone);
     if (!user) {
       user = {
         id: 'u-' + Math.random().toString(36).substr(2, 9),
         name,
         phone,
+        email: email || '',
         createdAt: new Date().toISOString()
       };
       this.addUser(user);
     } else {
       user.name = name;
-      fetch('/api/users', {
+      if (email) user.email = email;
+      notifyStorageChange();
+      safeFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(user)
@@ -579,15 +843,21 @@ export const storageService = {
     }
 
     if (typeof window !== 'undefined') {
-      sessionStorage.setItem('lernweb_user_auth_session', JSON.stringify(user));
+      try {
+        sessionStorage.setItem('lernweb_user_auth_session', JSON.stringify(user));
+        localStorage.setItem('lernweb_user_auth_session', JSON.stringify(user));
+      } catch (e) {
+        console.warn('Storage write failed', e);
+      }
     }
+    notifyStorageChange();
     return user;
   },
 
   getCurrentUser(): UserAccount | null {
     if (typeof window !== 'undefined') {
       try {
-        const stored = sessionStorage.getItem('lernweb_user_auth_session');
+        const stored = sessionStorage.getItem('lernweb_user_auth_session') || localStorage.getItem('lernweb_user_auth_session');
         return stored ? JSON.parse(stored) : null;
       } catch {
         return null;
@@ -601,7 +871,8 @@ export const storageService = {
     if (index !== -1) {
       cachedUsers[index] = { ...cachedUsers[index], ...updatedFields };
       const updatedUser = cachedUsers[index];
-      fetch('/api/users', {
+      notifyStorageChange();
+      safeFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedUser)
@@ -609,7 +880,12 @@ export const storageService = {
 
       const current = this.getCurrentUser();
       if (current && current.id === userId && typeof window !== 'undefined') {
-        sessionStorage.setItem('lernweb_user_auth_session', JSON.stringify(updatedUser));
+        try {
+          sessionStorage.setItem('lernweb_user_auth_session', JSON.stringify(updatedUser));
+          localStorage.setItem('lernweb_user_auth_session', JSON.stringify(updatedUser));
+        } catch (e) {
+          console.warn('Storage write failed', e);
+        }
       }
       return updatedUser;
     }
@@ -618,8 +894,14 @@ export const storageService = {
 
   logoutUser(): void {
     if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('lernweb_user_auth_session');
+      try {
+        sessionStorage.removeItem('lernweb_user_auth_session');
+        localStorage.removeItem('lernweb_user_auth_session');
+      } catch (e) {
+        console.warn('Storage remove failed', e);
+      }
     }
+    notifyStorageChange();
   },
 
   deleteUserAccount(userId: string): boolean {
@@ -627,8 +909,8 @@ export const storageService = {
     cachedUsers = cachedUsers.filter(u => u.id !== userId);
     cachedDrafts = cachedDrafts.filter(d => d.visitorId !== userId);
     cachedOrders = cachedOrders.filter(o => o.userId !== userId);
-    fetch('/api/users/' + userId, { method: 'DELETE' }).catch(err => console.error(err));
     this.logoutUser();
+    safeFetch('/api/users/' + userId, { method: 'DELETE' }).catch(err => console.error(err));
     return true;
   },
 
@@ -708,7 +990,8 @@ export const storageService = {
       timestamp: new Date().toISOString()
     };
     cachedLogs.unshift(newLog);
-    fetch('/api/logs', {
+    notifyStorageChange();
+    safeFetch('/api/logs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newLog)
@@ -718,6 +1001,7 @@ export const storageService = {
 
   clearActivityLogs(): void {
     cachedLogs = [];
+    notifyStorageChange();
   },
 
   getChatMessages(): ChatMessage[] {
@@ -734,7 +1018,8 @@ export const storageService = {
       isAdminReply: msg.isAdminReply || false
     };
     cachedChats.unshift(newChat);
-    fetch('/api/chats', {
+    notifyStorageChange();
+    safeFetch('/api/chats', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newChat)
@@ -744,8 +1029,115 @@ export const storageService = {
 
   deleteChatMessage(chatId: string): ChatMessage[] {
     cachedChats = cachedChats.filter(c => c.id !== chatId);
-    fetch('/api/chats/' + chatId, { method: 'DELETE' }).catch(err => console.error(err));
+    notifyStorageChange();
+    safeFetch('/api/chats/' + chatId, { method: 'DELETE' }).catch(err => console.error(err));
     return cachedChats;
+  },
+
+  getSupportTickets(): SupportTicket[] {
+    return cachedTickets;
+  },
+
+  getTicketByUserId(userId: string): SupportTicket | null {
+    if (!userId) return null;
+    return cachedTickets.find(t => t.userId === userId || t.id === `ticket-${userId}`) || null;
+  },
+
+  saveSupportTicket(ticket: SupportTicket): SupportTicket[] {
+    const existingIndex = cachedTickets.findIndex(t => t.id === ticket.id);
+    if (existingIndex !== -1) {
+      cachedTickets[existingIndex] = ticket;
+    } else {
+      cachedTickets.unshift(ticket);
+    }
+    notifyStorageChange();
+    saveFirestoreTicket(ticket).catch(err => console.warn('Firestore ticket error:', err));
+    safeFetch('/api/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ticket)
+    }).catch(err => console.error(err));
+    return cachedTickets;
+  },
+
+  addMessageToTicket(
+    userId: string,
+    userName: string,
+    phone: string,
+    email: string,
+    msg: { sender: 'user' | 'ai' | 'admin'; senderName?: string; text: string }
+  ): SupportTicket {
+    const ticketId = `ticket-${userId || 'guest'}`;
+    let ticket = cachedTickets.find(t => t.id === ticketId);
+
+    const newMsg: SupportTicketMessage = {
+      id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      sender: msg.sender,
+      senderName: msg.senderName || (msg.sender === 'admin' ? 'الإدارة (Admin)' : msg.sender === 'ai' ? 'المساعد الذكي (AI)' : userName),
+      text: msg.text,
+      timestamp: new Date().toISOString()
+    };
+
+    if (!ticket) {
+      ticket = {
+        id: ticketId,
+        userId: userId || 'guest-' + Date.now(),
+        userName: userName || 'زائر كريم',
+        userPhone: phone || '',
+        userEmail: email || '',
+        status: 'open',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        unreadByAdmin: msg.sender === 'user',
+        unreadByUser: msg.sender === 'admin' || msg.sender === 'ai',
+        messages: [newMsg]
+      };
+    } else {
+      ticket = {
+        ...ticket,
+        userName: userName || ticket.userName,
+        userPhone: phone || ticket.userPhone,
+        userEmail: email || ticket.userEmail,
+        updatedAt: new Date().toISOString(),
+        unreadByAdmin: msg.sender === 'user' ? true : ticket.unreadByAdmin,
+        unreadByUser: (msg.sender === 'admin' || msg.sender === 'ai') ? true : ticket.unreadByUser,
+        messages: [...ticket.messages, newMsg]
+      };
+    }
+
+    this.saveSupportTicket(ticket);
+    return ticket;
+  },
+
+  updateTicketSystemOverride(ticketId: string, systemOverride: string): SupportTicket | null {
+    const ticket = cachedTickets.find(t => t.id === ticketId);
+    if (!ticket) return null;
+    const updated = {
+      ...ticket,
+      systemOverride: systemOverride.trim(),
+      updatedAt: new Date().toISOString()
+    };
+    this.saveSupportTicket(updated);
+    return updated;
+  },
+
+  updateTicketStatus(ticketId: string, status: 'open' | 'in_progress' | 'closed'): SupportTicket | null {
+    const ticket = cachedTickets.find(t => t.id === ticketId);
+    if (!ticket) return null;
+    const updated = {
+      ...ticket,
+      status,
+      updatedAt: new Date().toISOString()
+    };
+    this.saveSupportTicket(updated);
+    return updated;
+  },
+
+  deleteSupportTicket(ticketId: string): SupportTicket[] {
+    cachedTickets = cachedTickets.filter(t => t.id !== ticketId);
+    notifyStorageChange();
+    safeFetch('/api/tickets/' + ticketId, { method: 'DELETE' }).catch(err => console.error(err));
+    return cachedTickets;
   },
 
   exportFullPlatformBackup(): any {
@@ -784,4 +1176,67 @@ export function buildWhatsAppUrl(phone: string, message?: string): string {
     return 'https://wa.me/' + cleanNumber;
   }
   return 'https://wa.me/' + cleanNumber + '?text=' + encodeURIComponent(message.trim());
+}
+
+/**
+ * Normalizes YouTube video links, shorts, embed codes (<iframe ...>), or local videos
+ * into a valid playable embed URL or direct src string.
+ */
+export function formatVideoEmbedUrl(urlOrEmbed: string): string {
+  if (!urlOrEmbed || typeof urlOrEmbed !== 'string') return '';
+  const trimmed = urlOrEmbed.trim();
+
+  // Handle iframe embed code snippet: <iframe ... src="https://www.youtube.com/embed/xyz" ...></iframe>
+  if (trimmed.includes('<iframe') && trimmed.includes('src=')) {
+    const srcMatch = trimmed.match(/src=["']([^"']+)["']/i);
+    if (srcMatch && srcMatch[1]) {
+      return formatVideoEmbedUrl(srcMatch[1]);
+    }
+  }
+
+  // Handle standard YouTube watch link: https://www.youtube.com/watch?v=VIDEO_ID
+  if (trimmed.includes('youtube.com/watch') || trimmed.includes('m.youtube.com/watch')) {
+    try {
+      const urlObj = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+      const videoId = urlObj.searchParams.get('v');
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}?autoplay=0&rel=0`;
+      }
+    } catch {
+      const match = trimmed.match(/[?&]v=([^&]+)/);
+      if (match && match[1]) {
+        return `https://www.youtube.com/embed/${match[1]}?autoplay=0&rel=0`;
+      }
+    }
+  }
+
+  // Handle short YouTube URL: https://youtu.be/VIDEO_ID
+  if (trimmed.includes('youtu.be/')) {
+    const match = trimmed.match(/youtu\.be\/([^?&#]+)/);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}?autoplay=0&rel=0`;
+    }
+  }
+
+  // Handle YouTube Shorts URL: https://www.youtube.com/shorts/VIDEO_ID
+  if (trimmed.includes('youtube.com/shorts/')) {
+    const match = trimmed.match(/youtube\.com\/shorts\/([^?&#]+)/);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}?autoplay=0&rel=0`;
+    }
+  }
+
+  // Already an embed URL: https://www.youtube.com/embed/VIDEO_ID
+  if (trimmed.includes('youtube.com/embed/')) {
+    return trimmed;
+  }
+
+  // Otherwise return as direct video link or file blob/base64
+  return trimmed;
+}
+
+export function isYouTubeUrlOrEmbed(urlOrEmbed: string): boolean {
+  if (!urlOrEmbed || typeof urlOrEmbed !== 'string') return false;
+  const lower = urlOrEmbed.toLowerCase();
+  return lower.includes('youtube.com') || lower.includes('youtu.be') || lower.includes('<iframe');
 }

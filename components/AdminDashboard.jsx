@@ -13,7 +13,7 @@
  *          - User Reviews & Ratings moderation and management
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Plus, Trash2, Edit3, Eye, EyeOff, Save, 
   Smartphone, Share2, FolderLock, Sparkles, CheckCircle2, 
@@ -21,13 +21,13 @@ import {
   Layers, UploadCloud, RefreshCw, LogOut, Video, FileText, Star,
   BarChart3, TrendingUp, Users, Download, Activity, PieChart as PieIcon,
   CheckSquare, Square, Settings, Sun, Moon, Monitor,
-  Clock, History, ListFilter, Search, Globe
+  Clock, History, ListFilter, Search, Globe, Send, Bot, User, Crown
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, 
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend 
 } from 'recharts';
-import { storageService } from '../src/services/storageService';
+import { storageService, formatVideoEmbedUrl, isYouTubeUrlOrEmbed } from '../src/services/storageService';
 import SeoManagement from './SeoManagement';
 import { translations } from '../src/data/translations';
 
@@ -66,9 +66,18 @@ export default function AdminDashboard({
   const [uploadFileCategory, setUploadFileCategory] = useState('source_code_zip');
   const [uploadFileMetadata, setUploadFileMetadata] = useState('');
 
+  const [supportTickets, setSupportTickets] = useState(() => storageService.getSupportTickets());
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [adminReplyText, setAdminReplyText] = useState('');
+  const [customOverrideInput, setCustomOverrideInput] = useState('');
+
   const refreshLocalData = () => {
     setProjects(storageService.getProjects(true));
-    setSettings(storageService.getSettings());
+    const freshSettings = storageService.getSettings();
+    setSettings(freshSettings);
+    if (freshSettings?.globalPrices) {
+      setGlobalPrices(freshSettings.globalPrices);
+    }
     setWallets(storageService.getWallets());
     setAiDrafts(storageService.getAiDrafts());
     setUsers(storageService.getUsers());
@@ -76,7 +85,16 @@ export default function AdminDashboard({
     setMediaResources(storageService.getMediaResources());
     setReviews(storageService.getReviews());
     setActivityLogs(storageService.getActivityLogs());
+    setSupportTickets(storageService.getSupportTickets());
   };
+
+  useEffect(() => {
+    storageService.syncNow();
+    const unsubscribe = storageService.subscribe(() => {
+      refreshLocalData();
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleDownloadLocalFile = (file) => {
     if (!file) return;
@@ -248,12 +266,15 @@ export default function AdminDashboard({
     triggerSaveNotification(isRtl ? 'تم حفظ إعدادات SEO بنجاح!' : 'SEO settings saved successfully!');
   };
 
-  // New Media form state
+  // New Media form state (YouTube, Local Video, Image URL, Local Image, Article)
   const [newMediaTitle, setNewMediaTitle] = useState('');
-  const [newMediaType, setNewMediaType] = useState('video'); // 'video' | 'doc'
+  const [newMediaType, setNewMediaType] = useState('video'); // 'video' | 'image' | 'doc'
+  const [newMediaSourceType, setNewMediaSourceType] = useState('youtube_url'); // 'youtube_url' | 'youtube_embed' | 'local_video' | 'image_url' | 'local_image'
   const [newMediaUrl, setNewMediaUrl] = useState('');
-  const [newMediaCategory, setNewMediaCategory] = useState(isRtl ? 'فيديو يوتيوب تعليمي' : 'YouTube Instructional Video');
+  const [newMediaEmbedCode, setNewMediaEmbedCode] = useState('');
+  const [newMediaCategory, setNewMediaCategory] = useState(isRtl ? 'فيديو يوتيوب شرح' : 'YouTube Video');
   const [newMediaContent, setNewMediaContent] = useState('');
+  const [newMediaFile, setNewMediaFile] = useState(null); // { name, type, base64 }
 
   // Recharts Dynamic Analytics Metrics Datasets
   const userEngagementTrends = [
@@ -539,25 +560,80 @@ export default function AdminDashboard({
     }
   };
 
-  // Add Media Resource (YouTube video or Article)
+  const handleMediaFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setNewMediaFile({
+        name: file.name,
+        type: file.type,
+        base64: event.target.result
+      });
+      setNewMediaUrl(event.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Add Media Resource (YouTube video, Embed code, Local video, Image URL, Local image, Article)
   const handleAddMedia = (e) => {
     e.preventDefault();
-    if (!newMediaTitle.trim()) return;
+    if (!newMediaTitle.trim()) {
+      alert(isRtl ? 'يرجى كتابة عنوان المحتوى أولاً' : 'Please enter title');
+      return;
+    }
+
+    let finalVideoUrl = '';
+    let finalImageUrl = '';
+
+    if (newMediaType === 'video') {
+      if (newMediaSourceType === 'youtube_url' || newMediaSourceType === 'youtube_embed') {
+        const inputString = newMediaSourceType === 'youtube_embed' ? newMediaEmbedCode : newMediaUrl;
+        finalVideoUrl = formatVideoEmbedUrl(inputString);
+        if (!finalVideoUrl) {
+          alert(isRtl ? 'يرجى إدخال رابط يوتيوب صحيح أو كود تضمين iframe' : 'Please enter valid YouTube URL or iframe embed code');
+          return;
+        }
+      } else if (newMediaSourceType === 'local_video') {
+        finalVideoUrl = newMediaFile?.base64 || newMediaUrl;
+        if (!finalVideoUrl) {
+          alert(isRtl ? 'يرجى اختيار فيديو من داخل جهازك أولاً' : 'Please upload a video file from your device');
+          return;
+        }
+      }
+    } else if (newMediaType === 'image') {
+      if (newMediaSourceType === 'local_image') {
+        finalImageUrl = newMediaFile?.base64 || newMediaUrl;
+        if (!finalImageUrl) {
+          alert(isRtl ? 'يرجى اختيار صورة من داخل جهازك أولاً' : 'Please upload an image file from your device');
+          return;
+        }
+      } else {
+        finalImageUrl = newMediaUrl.trim();
+        if (!finalImageUrl) {
+          alert(isRtl ? 'يرجى إدخال رابط الصورة المباشر' : 'Please enter direct image URL');
+          return;
+        }
+      }
+    }
 
     const newItem = {
       id: 'media-' + Date.now(),
       type: newMediaType,
+      mediaSourceType: newMediaSourceType,
       titleAr: newMediaTitle.trim(),
       titleEn: newMediaTitle.trim(),
-      durationOrReadTimeAr: newMediaType === 'video' ? '10:00 دقيقة' : 'قراءة في 5 دقائق',
-      durationOrReadTimeEn: newMediaType === 'video' ? '10:00 min' : '5 min read',
+      durationOrReadTimeAr: newMediaType === 'video' ? 'فيديو تفاعلي' : newMediaType === 'image' ? 'صورة HD' : 'قراءة في 5 دقائق',
+      durationOrReadTimeEn: newMediaType === 'video' ? 'Interactive Video' : newMediaType === 'image' ? 'HD Image' : '5 min read',
       categoryAr: newMediaCategory,
       categoryEn: newMediaCategory,
-      summaryAr: newMediaContent.slice(0, 120) || 'محتوى تعليمي جديد منشور من لوحة الأدمن',
+      summaryAr: newMediaContent.slice(0, 120) || 'محتوى تعليمي منشور من لوحة الأدمن',
       summaryEn: newMediaContent.slice(0, 120) || 'Published from admin dashboard',
       contentAr: newMediaContent.trim() || 'التفاصيل الكاملة للمحتوى التعليمي.',
       contentEn: newMediaContent.trim() || 'Full educational content details.',
-      videoUrl: newMediaType === 'video' ? (newMediaUrl.trim() || 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4') : undefined,
+      videoUrl: finalVideoUrl || undefined,
+      imageUrl: finalImageUrl || undefined,
+      embedCode: newMediaEmbedCode || undefined,
       thumbnailBg: 'from-blue-900 to-indigo-950',
       isPublished: true
     };
@@ -568,13 +644,15 @@ export default function AdminDashboard({
       'media_created',
       `نشر محتوى جديد: ${newMediaTitle.trim()}`,
       `Published media item: ${newMediaTitle.trim()}`,
-      `النوع: ${newMediaType === 'video' ? 'فيديو يوتيوب' : 'مقال وتوثيق'}`
+      `النوع: ${newMediaType} - المصدر: ${newMediaSourceType}`
     );
     setActivityLogs(storageService.getActivityLogs());
     setNewMediaTitle('');
     setNewMediaUrl('');
+    setNewMediaEmbedCode('');
     setNewMediaContent('');
-    triggerSaveNotification(isRtl ? 'تم نشر المحتوى أو فيديو اليوتيوب بنجاح في المنصة!' : 'Media published successfully!');
+    setNewMediaFile(null);
+    triggerSaveNotification(isRtl ? 'تم نشر المحتوى أو فيديو اليوتيوب/الصورة بنجاح في المنصة!' : 'Media published successfully!');
   };
 
   const handleDeleteMedia = (mediaId) => {
@@ -619,6 +697,7 @@ export default function AdminDashboard({
       `وضع المظهر المصرح: ${settings.themeMode || 'user'}`
     );
     setActivityLogs(storageService.getActivityLogs());
+    if (onRefreshData) onRefreshData();
     triggerSaveNotification(isRtl ? 'تم حفظ الإعدادات والأسعار بنجاح!' : 'Settings and prices saved!');
   };
 
@@ -632,6 +711,7 @@ export default function AdminDashboard({
       'Updated Mobile Wallet Payment Configurations'
     );
     setActivityLogs(storageService.getActivityLogs());
+    if (onRefreshData) onRefreshData();
     triggerSaveNotification(isRtl ? 'تم تحديث بيانات المحافظ الإلكترونية بنجاح!' : 'Mobile wallets updated!');
   };
 
@@ -793,6 +873,7 @@ export default function AdminDashboard({
             { id: 'social', label: isRtl ? 'الهوية والبصريات والروابط' : 'Identity & Links', icon: Share2 },
             { id: 'media', label: isRtl ? 'فيديوهات يوتيوب والمقالات' : 'YouTube & Articles', icon: Video, count: mediaResources.length },
             { id: 'users', label: isRtl ? 'العملاء المسجلون' : 'Users', icon: ShieldCheck, count: users.length },
+            { id: 'tickets', label: isRtl ? 'تذاكر ومحادثات الدعم الفني' : 'AI & Live Support Tickets', icon: MessageSquare, count: supportTickets.filter(t => t.status === 'open' || t.unreadByAdmin).length },
             { id: 'drafts', label: isRtl ? 'طلبات التعديل والملاحظات' : 'Client Modifications', icon: Sparkles, count: aiDrafts.filter(d => d.status === 'pending_review' || d.status === 'in_progress').length },
             { id: 'reviews', label: isRtl ? 'تقييمات وآراء العملاء' : 'Reviews', icon: Star, count: reviews.length }
           ].map((sec) => {
@@ -1190,15 +1271,27 @@ export default function AdminDashboard({
                     </div>
                   )}
 
-                  {/* File Input Zone */}
-                  <div className="border-2 border-dashed border-slate-800 hover:border-emerald-500/50 bg-slate-950 p-6 rounded-2xl text-center space-y-3 transition">
-                    <UploadCloud className="w-8 h-8 text-emerald-400 mx-auto" />
+                  {/* Direct Drag and Drop File Upload Zone */}
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const droppedFile = e.dataTransfer.files?.[0];
+                      if (droppedFile) {
+                        const syntheticEvent = { target: { files: [droppedFile], value: '' } };
+                        handleFileUploadAndRestore(syntheticEvent);
+                      }
+                    }}
+                    className="border-2 border-dashed border-slate-700 hover:border-emerald-500 bg-slate-950 p-8 rounded-2xl text-center space-y-3 transition cursor-pointer shadow-inner"
+                  >
+                    <UploadCloud className="w-10 h-10 text-emerald-400 mx-auto animate-pulse" />
                     <div className="space-y-1">
                       <p className="text-xs md:text-sm font-bold text-white">
-                        {isRtl ? 'انقر لاختيار ملف JSON للنسخة الاحتياطية' : 'Click to select JSON backup file'}
+                        {isRtl ? 'اسحب وأفلت ملف النسخة الاحتياطية JSON هنا' : 'Drag & Drop your JSON backup file here'}
                       </p>
                       <p className="text-[11px] text-slate-400">
-                        {isRtl ? 'يدعم ملفات .json المنشأة من منصة ليرن ويب' : 'Supports .json files generated by Lern Web'}
+                        {isRtl ? 'أو انقر لاختيار ملف من جهازك' : 'or click to browse from device'}
                       </p>
                     </div>
 
@@ -1960,70 +2053,223 @@ export default function AdminDashboard({
           </form>
         )}
 
-        {/* SECTION 4: MEDIA & YOUTUBE PUBLISHING */}
+        {/* SECTION 4: MEDIA, YOUTUBE & IMAGE PUBLISHING */}
         {activeSection === 'media' && (
           <div className="space-y-6">
-            <form onSubmit={handleAddMedia} className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 md:p-8 shadow-xl space-y-4">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Video className="w-5 h-5 text-emerald-400" />
-                <span>{isRtl ? 'نشر فيديو يوتيوب أو مقال جديد في المنصة' : 'Publish YouTube Video or Article'}</span>
-              </h3>
+            <form onSubmit={handleAddMedia} className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 md:p-8 shadow-xl space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Video className="w-5 h-5 text-emerald-400" />
+                  <span>{isRtl ? 'مركز نشر وسائط يوتيوب، الصور والتوثيقات' : 'Media, YouTube & Image Publishing Hub'}</span>
+                </h3>
+                <span className="text-xs text-slate-400 font-mono">v4.0 Enhanced Player</span>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Content Type Selector */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300">{isRtl ? 'نوع المحتوى:' : 'Type:'}</label>
+                  <label className="text-xs font-semibold text-slate-300">{isRtl ? 'نوع المحتوى:' : 'Content Type:'}</label>
                   <select
                     value={newMediaType}
-                    onChange={(e) => setNewMediaType(e.target.value)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewMediaType(val);
+                      if (val === 'video') setNewMediaSourceType('youtube_url');
+                      else if (val === 'image') setNewMediaSourceType('image_url');
+                    }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white font-bold"
                   >
-                    <option value="video">{isRtl ? 'فيديو يوتيوب' : 'YouTube Video'}</option>
-                    <option value="doc">{isRtl ? 'مقال أو توثيق تعليمي' : 'Article / Documentation'}</option>
+                    <option value="video">{isRtl ? '🎥 فيديو (يوتيوب أو من الجهاز)' : '🎥 Video (YouTube / Local)'}</option>
+                    <option value="image">{isRtl ? '🖼️ صورة (رابط مباشر أو من الجهاز)' : '🖼️ Image (URL / Local)'}</option>
+                    <option value="doc">{isRtl ? '📄 مقال أو توثيق تعليمي' : '📄 Article / Documentation'}</option>
                   </select>
                 </div>
 
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300">{isRtl ? 'عنوان الفيديو أو المقال:' : 'Title:'}</label>
+                {/* Title Input */}
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300">{isRtl ? 'عنوان الفيديو، الصورة أو المقال:' : 'Title:'}</label>
                   <input
                     type="text"
                     value={newMediaTitle}
                     onChange={(e) => setNewMediaTitle(e.target.value)}
-                    placeholder={isRtl ? 'أدخل العنوان هنا...' : 'Enter title...'}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white"
+                    placeholder={isRtl ? 'مثال: كورس شرح إنشاء المنصات البرمجية والربط السحابي' : 'e.g. Platform Architecture Overview'}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white"
                   />
                 </div>
 
+                {/* Sub-source Selector for Video */}
                 {newMediaType === 'video' && (
-                  <div className="space-y-1 sm:col-span-3">
-                    <label className="text-xs font-semibold text-slate-300">{isRtl ? 'رابط فيديو يوتيوب أو العرض:' : 'YouTube Video URL / Embed:'}</label>
-                    <input
-                      type="url"
-                      value={newMediaUrl}
-                      onChange={(e) => setNewMediaUrl(e.target.value)}
-                      placeholder="https://www.youtube.com/embed/..."
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white font-mono"
-                    />
+                  <div className="md:col-span-3 space-y-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+                    <label className="text-xs font-bold text-emerald-400 block">{isRtl ? 'طريقة إدراج الفيديو:' : 'Video Source Mode:'}</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewMediaSourceType('youtube_url')}
+                        className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                          newMediaSourceType === 'youtube_url' 
+                            ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300' 
+                            : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🔴 {isRtl ? 'رابط يوتيوب طبيعي' : 'YouTube Link'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNewMediaSourceType('youtube_embed')}
+                        className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                          newMediaSourceType === 'youtube_embed' 
+                            ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300' 
+                            : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🧩 {isRtl ? 'كود تضمين يوتيوب (iframe)' : 'YouTube Embed Code'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNewMediaSourceType('local_video')}
+                        className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                          newMediaSourceType === 'local_video' 
+                            ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300' 
+                            : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        💻 {isRtl ? 'اختيار فيديو من الجهاز' : 'Upload Video File'}
+                      </button>
+                    </div>
+
+                    {/* YouTube Standard Link Input */}
+                    {newMediaSourceType === 'youtube_url' && (
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-400">{isRtl ? 'أدخل رابط فيديو يوتيوب عادي، رابط Shorts أو رابط مشاركة:' : 'Enter standard YouTube URL, Shorts or share link:'}</span>
+                        <input
+                          type="text"
+                          value={newMediaUrl}
+                          onChange={(e) => setNewMediaUrl(e.target.value)}
+                          placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ OR https://youtu.be/dQw4w9WgXcQ"
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs text-white font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {/* YouTube Embed Snippet Code Input */}
+                    {newMediaSourceType === 'youtube_embed' && (
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-400">{isRtl ? 'الصق كود التضمين الكامل من يوتيوب (<iframe ...></iframe>):' : 'Paste full YouTube iframe embed snippet:'}</span>
+                        <textarea
+                          rows={2}
+                          value={newMediaEmbedCode}
+                          onChange={(e) => setNewMediaEmbedCode(e.target.value)}
+                          placeholder='<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="YouTube video player" frameborder="0" allowfullscreen></iframe>'
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-xs text-emerald-300 font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {/* Local Video Selection */}
+                    {newMediaSourceType === 'local_video' && (
+                      <div className="space-y-2">
+                        <span className="text-[11px] text-slate-400">{isRtl ? 'اختر فيديو من داخل جهاز المحمول أو الكمبيوتر (.mp4, .webm, .ogg):' : 'Select a local video file (.mp4, .webm):'}</span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          onChange={handleMediaFileSelect}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-xs text-slate-200 file:mr-4 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
+                        />
+                        {newMediaFile && (
+                          <div className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>{isRtl ? `تم تجهيز فيديو: ${newMediaFile.name}` : `Selected video: ${newMediaFile.name}`}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
-                <div className="space-y-1 sm:col-span-3">
-                  <label className="text-xs font-semibold text-slate-300">{isRtl ? 'محتوى المقال أو تفاصيل الفيديو:' : 'Content Description:'}</label>
+                {/* Sub-source Selector for Image */}
+                {newMediaType === 'image' && (
+                  <div className="md:col-span-3 space-y-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+                    <label className="text-xs font-bold text-cyan-400 block">{isRtl ? 'طريقة إدراج الصورة:' : 'Image Source Mode:'}</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewMediaSourceType('image_url')}
+                        className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                          newMediaSourceType === 'image_url' 
+                            ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300' 
+                            : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🌐 {isRtl ? 'رابط صورة مباشر (Image URL)' : 'Direct Image URL'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNewMediaSourceType('local_image')}
+                        className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                          newMediaSourceType === 'local_image' 
+                            ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300' 
+                            : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        💻 {isRtl ? 'اختيار صورة من داخل الجهاز' : 'Upload Image File'}
+                      </button>
+                    </div>
+
+                    {newMediaSourceType === 'image_url' && (
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-400">{isRtl ? 'أدخل رابط الصورة المباشر:' : 'Enter direct image URL:'}</span>
+                        <input
+                          type="url"
+                          value={newMediaUrl}
+                          onChange={(e) => setNewMediaUrl(e.target.value)}
+                          placeholder="https://images.unsplash.com/photo-..."
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs text-white font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {newMediaSourceType === 'local_image' && (
+                      <div className="space-y-2">
+                        <span className="text-[11px] text-slate-400">{isRtl ? 'اختر صورة من داخل الجهاز (.png, .jpg, .svg, .webp):' : 'Select an image file (.png, .jpg):'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleMediaFileSelect}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-xs text-slate-200 file:mr-4 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 cursor-pointer"
+                        />
+                        {newMediaFile && (
+                          <div className="text-xs text-cyan-400 font-bold flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>{isRtl ? `تم تجهيز صورة: ${newMediaFile.name}` : `Selected image: ${newMediaFile.name}`}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Description or Article Text */}
+                <div className="space-y-1 md:col-span-3">
+                  <label className="text-xs font-semibold text-slate-300">{isRtl ? 'الشرح، الوصف أو محتوى التوثيق التعليمي:' : 'Content Details / Article Text:'}</label>
                   <textarea
                     rows={3}
                     value={newMediaContent}
                     onChange={(e) => setNewMediaContent(e.target.value)}
-                    placeholder={isRtl ? 'اكتب التفاصيل هنا...' : 'Enter content details...'}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white"
+                    placeholder={isRtl ? 'اكتب التفاصيل الكاملة هنا لتظهر للزوار والعملاء...' : 'Enter details...'}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white leading-relaxed"
                   />
                 </div>
               </div>
 
               <button
                 type="submit"
-                className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 transition shadow"
+                className="flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-xs font-bold text-white hover:bg-emerald-500 transition shadow-lg shrink-0 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>{isRtl ? 'نشر في المنصة الآن' : 'Publish Now'}</span>
+                <span>{isRtl ? 'نشر المحتوى فورياً في المنصة' : 'Publish to Platform Now'}</span>
               </button>
             </form>
 
@@ -2157,27 +2403,36 @@ export default function AdminDashboard({
         {/* SECTION 5: REGISTERED USERS */}
         {activeSection === 'users' && (
           <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 md:p-8 shadow-xl space-y-6">
-            <h3 className="text-xl font-bold text-white">{isRtl ? 'العملاء المسجلون فى المنصة' : 'Registered Platform Clients'}</h3>
+            <h3 className="text-xl font-bold text-white">{isRtl ? 'العملاء المسجلون فى المنصة (مع تحديد النظام وتاريخ الاختيار)' : 'Registered Platform Clients (OS & Selection Timestamp)'}</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-right border-collapse text-xs">
                 <thead>
                   <tr className="text-slate-400 border-b border-slate-800">
                     <th className="px-4 py-3">{isRtl ? 'اسم العميل' : 'Client Name'}</th>
                     <th className="px-4 py-3">{isRtl ? 'رقم الهاتف' : 'Phone'}</th>
+                    <th className="px-4 py-3">{isRtl ? 'نظام التشغيل والجهاز' : 'Device / OS'}</th>
                     <th className="px-4 py-3">{isRtl ? 'الباقة المشترك بها' : 'Subscribed Plan'}</th>
-                    <th className="px-4 py-3">{isRtl ? 'تاريخ التسجيل' : 'Joined Date'}</th>
+                    <th className="px-4 py-3">{isRtl ? 'تاريخ ووقت التسجيل' : 'Registration Timestamp'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {users.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">{isRtl ? 'لا يوجد عملاء مسجلون بعد.' : 'No registered users.'}</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">{isRtl ? 'لا يوجد عملاء مسجلون بعد.' : 'No registered users.'}</td></tr>
                   ) : (
                     users.map(u => {
                       const userPlan = plans.find(p => p.id === u.purchasedPlanId);
+                      const formattedDate = u.createdAt 
+                        ? new Date(u.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : (isRtl ? 'اليوم' : 'Today');
                       return (
                         <tr key={u.id} className="text-slate-300">
                           <td className="px-4 py-3 font-bold text-white">{u.name}</td>
                           <td className="px-4 py-3 font-mono">{u.phone}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 bg-slate-800 text-slate-300 font-mono text-[11px]">
+                              💻 {u.deviceOs || 'Windows / PWA Web'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3">
                             {userPlan ? (
                               <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 bg-blue-500/20 text-blue-400 font-bold">
@@ -2187,7 +2442,7 @@ export default function AdminDashboard({
                               <span className="text-slate-500">{isRtl ? 'لا يوجد باقة' : 'No Plan'}</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-slate-500">{u.createdAt.split('T')[0]}</td>
+                          <td className="px-4 py-3 text-slate-400 font-mono">{formattedDate}</td>
                         </tr>
                       );
                     })
@@ -2401,6 +2656,339 @@ export default function AdminDashboard({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION: AI & LIVE SUPPORT TICKETS MANAGEMENT */}
+        {activeSection === 'tickets' && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Header Banner */}
+            <div className="rounded-3xl border border-blue-500/40 bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 p-6 md:p-8 shadow-2xl space-y-3">
+              <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
+                <MessageSquare className="w-4 h-4 text-blue-400" />
+                <span>{isRtl ? 'إدارة تذاكر ومحادثات الدعم الفني اللحظية والتوجيهات المخصصة' : 'Support Tickets & Custom AI Directive Panel'}</span>
+              </div>
+              <h2 className="text-2xl md:text-3xl font-black text-white">
+                {isRtl ? 'المحادثات الحية وتوجيهات الذكاء الاصطناعي للعملاء' : 'Live Support Tickets & AI System Prompt Overrides'}
+              </h2>
+              <p className="text-xs md:text-sm text-slate-300 max-w-3xl leading-relaxed">
+                {isRtl 
+                  ? 'يمكنك متابعة محادثات المساعد الذكي مع كافة العملاء والزوار في الوقت الفعلي، الرد عليهم مباشرة كـ أدمن (Admin)، وتعيين توجيهات وحوافز خاصة (System Overrides) لكل عميل بشكل منفصل.' 
+                  : 'Monitor ongoing AI chat tickets in real-time, respond directly as administrator, and inject custom AI system instruction overrides per user.'}
+              </p>
+            </div>
+
+            {/* Main Tickets Interface Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Ticket List Sidebar (4 Cols) */}
+              <div className="lg:col-span-4 rounded-3xl border border-slate-800 bg-slate-900/90 p-4 space-y-3 shadow-xl">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800 px-2">
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-blue-400" />
+                    <span>{isRtl ? 'التذاكر النشطة:' : 'Active Tickets:'}</span>
+                  </h3>
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">
+                    {supportTickets.length}
+                  </span>
+                </div>
+
+                {supportTickets.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 space-y-2">
+                    <MessageSquare className="w-8 h-8 text-slate-700 mx-auto" />
+                    <p className="text-xs font-semibold">{isRtl ? 'لا توجد تذاكر دعم حالياً.' : 'No active support tickets.'}</p>
+                    <p className="text-[11px] text-slate-600">{isRtl ? 'ستظهر محادثات العملاء والمساعد الذكي فور بدايتها.' : 'User chats will appear here automatically.'}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                    {supportTickets.map((t) => {
+                      const isSelected = selectedTicketId === t.id || (!selectedTicketId && supportTickets[0]?.id === t.id);
+                      const lastMsg = t.messages && t.messages.length > 0 ? t.messages[t.messages.length - 1] : null;
+
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => {
+                            setSelectedTicketId(t.id);
+                            setCustomOverrideInput(t.systemOverride || '');
+                          }}
+                          className={`p-3.5 rounded-2xl border text-xs cursor-pointer transition-all space-y-2 ${
+                            isSelected 
+                              ? 'border-blue-500 bg-blue-950/40 ring-1 ring-blue-500/40 shadow-lg' 
+                              : 'border-slate-800/80 bg-slate-950/80 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-sm">{t.userName || 'زائر كريم'}</span>
+                              {t.unreadByAdmin && (
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                              )}
+                            </div>
+
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              t.status === 'open' ? 'bg-emerald-500/20 text-emerald-400' :
+                              t.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-800 text-slate-400'
+                            }`}>
+                              {t.status === 'open' ? (isRtl ? 'مفتوحة' : 'Open') :
+                               t.status === 'in_progress' ? (isRtl ? 'قيد المتابعة' : 'In Progress') : (isRtl ? 'مغلقة' : 'Closed')}
+                            </span>
+                          </div>
+
+                          {t.userPhone && (
+                            <p className="text-[11px] font-mono text-slate-400">📱 {t.userPhone}</p>
+                          )}
+
+                          {lastMsg && (
+                            <p className="text-[11px] text-slate-300 line-clamp-1 italic">
+                              "{lastMsg.text}"
+                            </p>
+                          )}
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-900">
+                            <span>{t.updatedAt ? new Date(t.updatedAt).toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                            {t.systemOverride && (
+                              <span className="text-amber-400 font-bold flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                <span>{isRtl ? 'توجيه محدد' : 'Override Set'}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Active Ticket Transcript & Override Controls (8 Cols) */}
+              <div className="lg:col-span-8 space-y-6">
+                {(() => {
+                  const activeTicket = supportTickets.find(t => t.id === selectedTicketId) || supportTickets[0];
+
+                  if (!activeTicket) {
+                    return (
+                      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-12 text-center text-slate-400 space-y-3 shadow-xl">
+                        <Bot className="w-12 h-12 text-slate-700 mx-auto" />
+                        <h4 className="text-lg font-bold text-white">{isRtl ? 'يرجى اختيار تذكرة محادثة لمعاينتها والرد عليها' : 'Select a support ticket'}</h4>
+                        <p className="text-xs text-slate-500 max-w-md mx-auto">{isRtl ? 'ستتمكن من قراءة سجل المحادثة الكامل والرد مباشرة كـ أدمن وتعيين حوافز وتوجيهات خاصة.' : 'View transcript, reply directly as admin, or push custom AI system overrides.'}</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Selected Ticket Top Header Bar */}
+                      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-5 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-bold text-white">{activeTicket.userName}</h3>
+                            <span className="font-mono text-xs text-slate-400">({activeTicket.userPhone || 'زائر بدون رقم'})</span>
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            {isRtl ? `تاريخ البدء: ${new Date(activeTicket.createdAt || Date.now()).toLocaleString('ar-EG')}` : `Created: ${activeTicket.createdAt}`}
+                          </p>
+                        </div>
+
+                        {/* Status Change & Delete Ticket */}
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={activeTicket.status || 'open'}
+                            onChange={(e) => {
+                              const newStatus = e.target.value;
+                              storageService.updateTicketStatus(activeTicket.id, newStatus);
+                              triggerSaveNotification(isRtl ? 'تم تحديث حالة التذكرة' : 'Ticket status updated');
+                            }}
+                            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white font-bold"
+                          >
+                            <option value="open">{isRtl ? '🟢 مفتوحة (Open)' : 'Open'}</option>
+                            <option value="in_progress">{isRtl ? '🔵 قيد المتابعة (In Progress)' : 'In Progress'}</option>
+                            <option value="closed">{isRtl ? '⚪ مغلقة (Closed)' : 'Closed'}</option>
+                          </select>
+
+                          <button
+                            onClick={() => {
+                              if (window.confirm(isRtl ? 'حذف هذه التذكرة نهائياً؟' : 'Delete this ticket?')) {
+                                storageService.deleteSupportTicket(activeTicket.id);
+                                setSelectedTicketId(null);
+                                triggerSaveNotification(isRtl ? 'تم حذف التذكرة' : 'Ticket deleted');
+                              }
+                            }}
+                            className="p-2 rounded-xl text-rose-400 hover:bg-rose-500/20 transition"
+                            title={isRtl ? 'حذف التذكرة' : 'Delete Ticket'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom AI System Override Control Panel Card */}
+                      <div className="rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-950/30 via-slate-900 to-indigo-950/40 p-6 space-y-4 shadow-xl">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-amber-400" />
+                            <h4 className="text-sm md:text-base font-bold text-white">
+                              {isRtl ? 'تعيين توجيهات خاصة بالذكاء الاصطناعي لهذا العميل (Custom System Override):' : 'Custom AI System Directive / Prompt Override:'}
+                            </h4>
+                          </div>
+                          {activeTicket.systemOverride && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              {isRtl ? 'توجيه نشط الآن' : 'Override Active'}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          {isRtl 
+                            ? 'اكتب توجيهات خاصة للمساعد الذكي ليلتزم بها حصرياً عند الإجابة على هذا العميل (مثل: تقديم خصم خاص، فرض الإجابة بالإنجليزية، أو التركيز على خدمة معينة):' 
+                            : 'Set custom instructions for the AI assistant to strictly adhere to when replying to this user:'}
+                        </p>
+
+                        <textarea
+                          rows={3}
+                          value={customOverrideInput}
+                          onChange={(e) => setCustomOverrideInput(e.target.value)}
+                          placeholder={isRtl ? 'أدخل التوجيه الخاص هنا... مثال: "قدم لهذا العميل خصماً بقيمة 20% على الترخيص السنوي وتحدث بلهجة مصرية ودودة جداً"' : 'Enter custom system instructions for this user...'}
+                          className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-3.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                        />
+
+                        {/* Presets Row */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <span className="text-[11px] font-bold text-slate-400">{isRtl ? 'نماذج جاهزة للتوجيه:' : 'Quick Presets:'}</span>
+                          {[
+                            { label: isRtl ? '🏷️ عرض خصم 20% خاص' : '20% Discount', text: 'قدم لهذا العميل خصماً خاصاً بقيمة 20% على باقة الترخيص السنوي بطلب كود PROMO20.' },
+                            { label: isRtl ? '🌐 فرض اللغة الإنجليزية' : 'Force English', text: 'Strictly respond to this user in fluent, professional English only.' },
+                            { label: isRtl ? '💬 توجيه للواتساب' : 'Route to WhatsApp', text: 'أرشد العميل للتحويل والتفعيل المباشر عبر رقم الواتساب 01024889921 مع تأكيد المتابعة الفورية.' },
+                            { label: isRtl ? '🎯 التركيز على Proctor AI' : 'Focus Proctor AI', text: 'ركز على شرح مميزات نظام Proctor AI للاختبارات الذكية وتأمين المتصفح ضد الغش.' }
+                          ].map((preset, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setCustomOverrideInput(preset.text)}
+                              className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-700 hover:border-amber-400 text-[11px] font-bold text-slate-300 hover:text-white transition"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-500/20">
+                          {activeTicket.systemOverride && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                storageService.updateTicketSystemOverride(activeTicket.id, '');
+                                setCustomOverrideInput('');
+                                triggerSaveNotification(isRtl ? 'تم إلغاء التوجيه الخاص وقبول التوجيه الافتراضي.' : 'Override cleared');
+                              }}
+                              className="px-4 py-2 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 text-xs font-bold transition"
+                            >
+                              {isRtl ? 'إلغاء التوجيه الخاص' : 'Clear Override'}
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!customOverrideInput.trim()) return;
+                              storageService.updateTicketSystemOverride(activeTicket.id, customOverrideInput);
+                              triggerSaveNotification(isRtl ? 'تم تطبيق وتفعيل التوجيه الخاص بذكاء هذا العميل!' : 'AI System Override applied!');
+                            }}
+                            className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-lg transition cursor-pointer"
+                          >
+                            <Sparkles className="w-4 h-4 fill-current" />
+                            <span>{isRtl ? 'حفظ وتطبيق التوجيه للعميل' : 'Save System Override'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Chat Messages Transcript View */}
+                      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 space-y-4 shadow-xl">
+                        <h4 className="text-sm font-bold text-white flex items-center justify-between border-b border-slate-800 pb-3">
+                          <span className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-blue-400" />
+                            <span>{isRtl ? 'سجل المحادثة الكامل للعميل:' : 'Conversation Transcript:'}</span>
+                          </span>
+                          <span className="text-xs text-slate-400 font-mono">
+                            {activeTicket.messages?.length || 0} {isRtl ? 'رسالة' : 'messages'}
+                          </span>
+                        </h4>
+
+                        <div className="max-h-[380px] overflow-y-auto space-y-3 pr-2 bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80">
+                          {(!activeTicket.messages || activeTicket.messages.length === 0) ? (
+                            <p className="text-xs text-slate-500 text-center py-6 italic">{isRtl ? 'لا توجد رسائل في هذه التذكرة بعد.' : 'No messages recorded yet.'}</p>
+                          ) : (
+                            activeTicket.messages.map((m) => {
+                              const isUser = m.sender === 'user';
+                              const isAdmin = m.sender === 'admin';
+
+                              return (
+                                <div key={m.id} className={`flex items-start gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                                  <div className={`max-w-[80%] p-3.5 rounded-2xl text-xs space-y-1 shadow ${
+                                    isUser 
+                                      ? 'bg-blue-600 text-white rounded-br-none' 
+                                      : isAdmin 
+                                        ? 'bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-amber-500/50 text-amber-200 rounded-bl-none' 
+                                        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
+                                  }`}>
+                                    <div className="flex items-center justify-between text-[10px] opacity-75 font-bold border-b border-white/10 pb-1">
+                                      <span>{m.senderName || (isUser ? activeTicket.userName : isAdmin ? 'الإدارة (Admin)' : 'المساعد الذكي (AI)')}</span>
+                                      <span>{m.timestamp ? new Date(m.timestamp).toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                                    </div>
+                                    <p className="whitespace-pre-wrap break-words pt-1">{m.text}</p>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {/* Admin Live Reply Form Box */}
+                        <div className="pt-2 border-t border-slate-800 space-y-2">
+                          <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <Crown className="w-4 h-4 text-amber-400" />
+                            <span>{isRtl ? 'إرسال رد شخصي فوري كـ أدمن (Admin Live Reply):' : 'Send Admin Reply Directly:'}</span>
+                          </label>
+
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={adminReplyText}
+                              onChange={(e) => setAdminReplyText(e.target.value)}
+                              placeholder={isRtl ? 'اكتب رد الإدارة المباشر للعميل هنا...' : 'Type admin response...'}
+                              className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!adminReplyText.trim()) return;
+                                storageService.addMessageToTicket(
+                                  activeTicket.userId,
+                                  activeTicket.userName,
+                                  activeTicket.userPhone,
+                                  activeTicket.userEmail,
+                                  {
+                                    sender: 'admin',
+                                    senderName: 'الإدارة (Admin)',
+                                    text: adminReplyText.trim()
+                                  }
+                                );
+                                setAdminReplyText('');
+                                triggerSaveNotification(isRtl ? 'تم إرسال رد الإدارة للعميل بنجاح!' : 'Admin reply sent!');
+                              }}
+                              className="flex items-center gap-1.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 text-xs font-bold shadow-lg transition cursor-pointer shrink-0"
+                            >
+                              <Send className="w-4 h-4" />
+                              <span>{isRtl ? 'إرسال كـ أدمن' : 'Send Reply'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           </div>
         )}
@@ -2693,6 +3281,50 @@ export default function AdminDashboard({
                         className="hidden"
                       />
                     </label>
+                  </div>
+
+                  {/* Drag and Drop File Dropzone */}
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const droppedFiles = Array.from(e.dataTransfer.files);
+                      if (droppedFiles.length === 0) return;
+                      droppedFiles.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const base64 = event.target?.result;
+                          const newFileObj = {
+                            id: 'file-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+                            name: file.name,
+                            base64: base64,
+                            type: file.type || 'application/octet-stream',
+                            fileCategory: uploadFileCategory,
+                            featureMetadata: uploadFileMetadata.trim() || (isRtl ? 'ملف مرفوع بالسحب والإفلات' : 'Drag & Drop uploaded file'),
+                            size: file.size,
+                            updatedAt: new Date().toISOString().split('T')[0]
+                          };
+                          setEditingProject((prev) => {
+                            if (!prev) return prev;
+                            const updatedFiles = [...(prev.fileData || []), newFileObj];
+                            const updatedProj = { ...prev, fileData: updatedFiles };
+                            storageService.updateProject(updatedProj);
+                            return updatedProj;
+                          });
+                          triggerSaveNotification(isRtl ? `تم إفلات وتحميل الملف (${file.name}) بنجاح!` : `File dropped and uploaded successfully!`);
+                        };
+                        reader.readAsDataURL(file);
+                      });
+                    }}
+                    className="sm:col-span-3 mt-2 border-2 border-dashed border-blue-500/40 bg-blue-950/20 hover:bg-blue-950/30 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2"
+                  >
+                    <UploadCloud className="w-8 h-8 text-blue-400 animate-bounce" />
+                    <p className="text-xs font-bold text-white">
+                      {isRtl ? 'اسحب وأفلت ملفات المشروع مباشرة هنا (Drag & Drop)' : 'Drag and Drop your project files directly here'}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      {isRtl ? 'يدعم الأكواد المصدرية، ملفات ZIP، والتوثيق' : 'Supports source code, ZIP, and docs'}
+                    </p>
                   </div>
                 </div>
 

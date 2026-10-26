@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, getDocs, doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, setDoc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -27,7 +27,7 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -42,7 +42,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-// CRUD for Projects
+// CRUD for Projects with onSnapshot real-time listener
 export async function fetchProjects() {
   try {
     const querySnapshot = await getDocs(collection(db, 'projects'));
@@ -50,6 +50,17 @@ export async function fetchProjects() {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'projects');
   }
+}
+
+export function subscribeToProjects(callback: (projects: any[]) => void, onError?: (error: any) => void) {
+  const colRef = collection(db, 'projects');
+  return onSnapshot(colRef, (querySnapshot) => {
+    const projects = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(projects);
+  }, (error) => {
+    if (onError) onError(error);
+    handleFirestoreError(error, OperationType.LIST, 'projects');
+  });
 }
 
 export async function saveProject(project: any) {
@@ -61,7 +72,7 @@ export async function saveProject(project: any) {
   }
 }
 
-// CRUD for Modification Requests (Drafts)
+// CRUD for Modification Requests (Drafts) with onSnapshot real-time listener
 export async function fetchDrafts() {
   try {
     const querySnapshot = await getDocs(collection(db, 'drafts'));
@@ -69,6 +80,17 @@ export async function fetchDrafts() {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'drafts');
   }
+}
+
+export function subscribeToDrafts(callback: (drafts: any[]) => void, onError?: (error: any) => void) {
+  const colRef = collection(db, 'drafts');
+  return onSnapshot(colRef, (querySnapshot) => {
+    const drafts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(drafts);
+  }, (error) => {
+    if (onError) onError(error);
+    handleFirestoreError(error, OperationType.LIST, 'drafts');
+  });
 }
 
 export async function saveDraft(draft: any) {
@@ -79,6 +101,37 @@ export async function saveDraft(draft: any) {
     handleFirestoreError(error, OperationType.WRITE, `drafts/${draft.id}`);
   }
 }
+
+// CRUD for Support Tickets with onSnapshot real-time listener
+export async function fetchTickets() {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'support_tickets'));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'support_tickets');
+  }
+}
+
+export function subscribeToTickets(callback: (tickets: any[]) => void, onError?: (error: any) => void) {
+  const colRef = collection(db, 'support_tickets');
+  return onSnapshot(colRef, (querySnapshot) => {
+    const tickets = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(tickets);
+  }, (error) => {
+    if (onError) onError(error);
+    handleFirestoreError(error, OperationType.LIST, 'support_tickets');
+  });
+}
+
+export async function saveTicket(ticket: any) {
+  try {
+    const ticketRef = doc(db, 'support_tickets', ticket.id);
+    await setDoc(ticketRef, ticket, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `support_tickets/${ticket.id}`);
+  }
+}
+
 // Auth functions
 export async function signUpUser(email: string, password: string) {
   try {

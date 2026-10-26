@@ -10,7 +10,7 @@
 import React, { useState } from 'react';
 import { 
   User, Phone, Mail, Calendar, Rocket, ShieldCheck, 
-  Save, CheckCircle2, AlertCircle, Edit3, Clock, Sparkles, LogOut, Trash2
+  Save, CheckCircle2, AlertCircle, Edit3, Clock, Sparkles, LogOut, Trash2, BarChart3
 } from 'lucide-react';
 import { storageService } from '../src/services/storageService';
 
@@ -94,7 +94,6 @@ export default function UserProfileSection({
 
       {/* Profile Summary Cards (Metrics Grid) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Metric 1: Registration Date */}
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">{isRtl ? 'تاريخ انضمام الحساب' : 'Registration Date'}</span>
@@ -109,7 +108,6 @@ export default function UserProfileSection({
           </p>
         </div>
 
-        {/* Metric 2: Total Project Deployments */}
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">{isRtl ? 'إجمالي نشر المنصات والمشاريع' : 'Total Project Deployments'}</span>
@@ -124,7 +122,6 @@ export default function UserProfileSection({
           </p>
         </div>
 
-        {/* Metric 3: Account ID & Verification */}
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">{isRtl ? 'معرف العميل (Client ID)' : 'Account Reference ID'}</span>
@@ -136,57 +133,6 @@ export default function UserProfileSection({
           <p className="text-[11px] text-slate-400">
             {isRtl ? 'مرجع دعم وتفعيل التراخيص والخدمات' : 'Reference for technical support & licenses'}
           </p>
-        </div>
-      </div>
-
-      {/* My Usage Summary Widget (Mini Progress Bars) */}
-      <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5 md:p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-blue-400" />
-            <h4 className="text-sm md:text-base font-bold text-white">
-              {isRtl ? 'ملخص الاستخدام الحالي' : 'My Usage Summary'}
-            </h4>
-          </div>
-          <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest px-2 py-1 bg-blue-400/10 rounded-md">
-            {isRtl ? 'باقة النشطة' : 'Active Plan'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Usage 1: Project Deployment Quota */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300 font-medium">{isRtl ? 'حصة نشر المشاريع' : 'Project Deployment Quota'}</span>
-              <span className="text-white font-bold">{userDraftsCount} / 10</span>
-            </div>
-            <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 rounded-full transition-all duration-1000"
-                style={{ width: `${Math.min((userDraftsCount / 10) * 100, 100)}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-slate-500">
-              {isRtl ? 'متبقي لك 3 عمليات نشر إضافية هذا الشهر' : '3 deployments remaining this month'}
-            </p>
-          </div>
-
-          {/* Usage 2: Sandbox Runtime Limits */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300 font-medium">{isRtl ? 'ساعات تشغيل المحاكي' : 'Sandbox Runtime Limit'}</span>
-              <span className="text-white font-bold">45 / 100 hr</span>
-            </div>
-            <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000"
-                style={{ width: '45%' }}
-              />
-            </div>
-            <p className="text-[10px] text-slate-500">
-              {isRtl ? 'تجدد الساعات تلقائياً يوم 1 في الشهر' : 'Resets automatically on the 1st of the month'}
-            </p>
-          </div>
         </div>
       </div>
 
@@ -215,7 +161,6 @@ export default function UserProfileSection({
 
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Full Name */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-blue-400" />
@@ -230,7 +175,6 @@ export default function UserProfileSection({
               />
             </div>
 
-            {/* Phone Number */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-emerald-400" />
@@ -246,7 +190,6 @@ export default function UserProfileSection({
             </div>
           </div>
 
-          {/* Email Address */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-amber-400" />

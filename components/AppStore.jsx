@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { storageService, buildWhatsAppUrl } from '../src/services/storageService';
 import FaqSection from './FaqSection';
+import TemplateGallery from './TemplateGallery';
 
 /**
  * @param {object} props
@@ -46,6 +47,7 @@ export default function AppStore({
   showToast
 }) {
   const targetWhatsAppNumber = adminSettings?.targetWhatsAppNumber || '201024889921';
+  const [storeSubTab, setStoreSubTab] = useState('marketplace'); // 'marketplace' | 'gallery'
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedType, setSelectedType] = useState('all'); // 'all' | 'cloud' | 'simulator' | 'educational'
   const [searchQuery, setSearchQuery] = useState('');
@@ -267,17 +269,17 @@ export default function AppStore({
         <div className="relative z-10 max-w-4xl space-y-4">
           <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-1.5 text-xs md:text-sm font-semibold text-blue-400">
             <Sparkles className="w-4 h-4 animate-spin text-blue-400" style={{ animationDuration: '6s' }} />
-            <span>{isRtl ? 'سوق المنصات والحلول التعليمية المتكاملة v3.8' : 'Unified Educational Marketplace v3.8'}</span>
+            <span>{isRtl ? 'سوق المتاجر والمواقع والمنصات الرقمية المتكاملة v4.0' : 'Unified Web, App & Store Marketplace v4.0'}</span>
           </div>
 
           <h1 className="text-3xl md:text-5xl font-black tracking-tight text-white leading-tight">
-            {isRtl ? 'استكشف واطلق أقوى منظومات إدارة وتدريس المراكز' : 'Discover & Deploy High-Performance Educational Engines'}
+            {isRtl ? 'استكشف واطلق أي موقع إلكتروني أو تطبيق سحابي بنقرة واحدة' : 'Discover & Deploy Any Website or Cloud Platform in Minutes'}
           </h1>
 
           <p className="text-base md:text-lg text-slate-300 leading-relaxed max-w-3xl">
             {isRtl 
-              ? 'مجموعة متكاملة من المنصات الرقمية المعتمدة للمراكز والسناتر التعليمية: بوابات إدارة الطلاب، محركات الامتحانات المؤمنة بالذكاء الاصطناعي، مختبرات البرمجة السحابية، وأنظمة الحضور الفوري بالباركود.'
-              : 'A curated suite of enterprise educational platforms built for educational centers: LMS portals, AI-proctored examination engines, browser-based code sandboxes, and millisecond QR check-in systems.'}
+              ? 'منظومة شاملة لبناء وتصفح جميع أنواع المتاجر والمواقع الرقمية: المتاجر الإلكترونية، مواقع الشركات والأعمال، منصات الذكاء الاصطناعي وSaaS، دليل العقارات، أنظمة العيادات والمستشفيات، منيو المطاعم الرقمي، البوابات الإخبارية، والأكاديميات التعليمية.'
+              : 'A comprehensive ecosystem to build & deploy any digital website: E-Commerce stores, Corporate agency sites, SaaS & Generative AI platforms, Real Estate portals, Healthcare clinic bookings, QR Restaurant menus, News publications, and Smart LMS Academies.'}
           </p>
 
           {/* Quick Metrics Bar */}
@@ -288,17 +290,61 @@ export default function AppStore({
             </div>
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-blue-400" />
-              <span>{isRtl ? 'معايير أمان معتمدة وتشفير كامل' : 'Enterprise Grade Security'}</span>
+              <span>{isRtl ? 'معايير أمان وتشفير وتوافق مع Edge' : 'Enterprise Security & Edge Ready'}</span>
             </div>
             <div className="flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-purple-400" />
-              <span>{isRtl ? 'جاهزية كاملة لتطبيقات PWA والموبايل' : 'PWA & Mobile Native Ready'}</span>
+              <span>{isRtl ? 'جاهزية كاملة لتطبيقات PWA والموبايل' : 'PWA & Native Mobile Ready'}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Search & Dynamic Filter Controls */}
+      {/* Marketplace vs Template Gallery SubTab Navigation */}
+      <div className="flex items-center justify-center pt-2">
+        <div className="inline-flex items-center p-1.5 rounded-2xl border border-slate-800 bg-slate-900/90 shadow-xl gap-2">
+          <button
+            type="button"
+            onClick={() => setStoreSubTab('marketplace')}
+            style={storeSubTab === 'marketplace' ? { backgroundColor: adminSettings?.primaryColor || '#2563eb' } : {}}
+            className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs md:text-sm font-bold transition-all cursor-pointer ${
+              storeSubTab === 'marketplace'
+                ? 'text-white shadow-lg'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>{isRtl ? 'سوق الأدوات والمنصات' : 'Marketplace Apps'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStoreSubTab('gallery')}
+            style={storeSubTab === 'gallery' ? { backgroundColor: adminSettings?.primaryColor || '#8b5cf6' } : {}}
+            className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs md:text-sm font-bold transition-all cursor-pointer ${
+              storeSubTab === 'gallery'
+                ? 'text-white shadow-lg'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span>{isRtl ? 'معرض القوالب الجاهزة (Template Gallery)' : 'Template Gallery'}</span>
+          </button>
+        </div>
+      </div>
+
+      {storeSubTab === 'gallery' ? (
+        <TemplateGallery 
+          lang={lang} 
+          t={t} 
+          onSelectTemplate={(tplConfig) => {
+            if (onLaunchSandbox) onLaunchSandbox(tplConfig);
+          }} 
+          adminSettings={adminSettings} 
+        />
+      ) : (
+        <>
+          {/* Search & Dynamic Filter Controls */}
       <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
         {/* Search Bar with Recent Searches Dropdown */}
         <div ref={searchContainerRef} className="relative flex-1 max-w-xl">
@@ -369,6 +415,14 @@ export default function AppStore({
         <div className="flex flex-wrap items-center gap-2">
           {[
             { id: 'all', label: t.categories.all },
+            { id: 'ecommerce', label: t.categories.ecommerce },
+            { id: 'corporate', label: t.categories.corporate },
+            { id: 'saas_ai', label: t.categories.saas_ai },
+            { id: 'real_estate', label: t.categories.real_estate },
+            { id: 'medical', label: t.categories.medical },
+            { id: 'hospitality', label: t.categories.hospitality },
+            { id: 'news_media', label: t.categories.news_media },
+            { id: 'lms_edu', label: t.categories.lms_edu },
             { id: 'lms', label: t.categories.lms },
             { id: 'stem', label: t.categories.stem },
             { id: 'ai', label: t.categories.ai },
@@ -849,6 +903,8 @@ export default function AppStore({
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* Embedded FAQ Section */}

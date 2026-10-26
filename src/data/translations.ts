@@ -26,6 +26,14 @@ export interface TranslationDict {
   searchPlaceholder: string;
   categories: {
     all: string;
+    ecommerce: string;
+    corporate: string;
+    saas_ai: string;
+    lms_edu: string;
+    real_estate: string;
+    medical: string;
+    hospitality: string;
+    news_media: string;
     lms: string;
     stem: string;
     ai: string;
@@ -112,13 +120,21 @@ export const translations: { ar: TranslationDict; en: TranslationDict } = {
     navCodeViewer: "أكواد Next.js لـ VS Code",
     themeToggle: "تبديل المظهر",
     langToggle: "English",
-    searchPlaceholder: "ابحث في التطبيقات التعليمية، الأدوات، ومكتبات المحتوى...",
+    searchPlaceholder: "ابحث في جميع مواقع الويب، المتاجر، الشركات، وتطبيقات السحاب...",
     categories: {
-      all: "جميع المنظومات",
-      lms: "إدارة المراكز والسناتر (LMS)",
+      all: "جميع المنظومات والمواقع",
+      ecommerce: "المتاجر والتجارة الإلكترونية",
+      corporate: "الشركات والأعمال التجارية",
+      saas_ai: "تطبيقات السحاب والذكاء الاصطناعي",
+      lms_edu: "التعليم والأكاديميات الذكية",
+      real_estate: "العقارات والحجوزات",
+      medical: "المستشفيات والعيادات الطبية",
+      hospitality: "المطاعم والمنيو الرقمي",
+      news_media: "المجلات والمحتوى الإخباري",
+      lms: "إدارة المراكز (LMS)",
       stem: "مختبرات الكود والعلوم",
       ai: "الذكاء الاصطناعي والتقييم",
-      operations: "حضور وبوابات الطلاب",
+      operations: "التشغيل والمتاجر",
     },
     filterAll: "الكل",
     version: "الإصدار",
@@ -204,9 +220,17 @@ export const translations: { ar: TranslationDict; en: TranslationDict } = {
     navCodeViewer: "VS Code Source Files",
     themeToggle: "Toggle Theme",
     langToggle: "العربية",
-    searchPlaceholder: "Search educational platforms, tools, and content modules...",
+    searchPlaceholder: "Search all website types, e-commerce, corporate apps, and cloud tools...",
     categories: {
-      all: "All Engines",
+      all: "All Websites & Platforms",
+      ecommerce: "E-Commerce & Online Stores",
+      corporate: "Corporate & Business Portfolios",
+      saas_ai: "SaaS & Generative AI Systems",
+      lms_edu: "Smart Education & Academies",
+      real_estate: "Real Estate & Booking Portals",
+      medical: "Healthcare & Clinic Systems",
+      hospitality: "Restaurants & Digital QR Menus",
+      news_media: "News & Media Publishing Hubs",
       lms: "LMS & Learning Centers",
       stem: "STEM Labs & Coding",
       ai: "AI & Smart Assessment",
