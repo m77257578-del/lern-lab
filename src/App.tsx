@@ -102,6 +102,8 @@ export default function RootLayout({ children }) {
 import AdminDashboard from '../components/AdminDashboard';
 import SecretLoginModal from '../components/SecretLoginModal';
 import { storageService, buildWhatsAppUrl, ProjectItem, AdminSettings, WalletConfig, MediaResourceItem, AiCustomizationDraft } from './services/storageService';
+import { subscribeToAuthChanges, signOutUser } from './services/firebaseService';
+
 
 export default function App() {
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
@@ -219,14 +221,14 @@ export default function App() {
     setMediaItems(storedMedia.length > 0 ? storedMedia : (MEDIA_RESOURCES as any[]));
     setPlans(storageService.getPlans());
     setUserDrafts(storageService.getAiDrafts());
-
-    const userLoggedIn = storageService.isUserLoggedIn();
-    setIsUserLoggedIn(userLoggedIn);
-    setCurrentUser(storageService.getCurrentUser());
   };
 
   useEffect(() => {
     refreshStorageData();
+    const unsubscribeAuth = subscribeToAuthChanges((user) => {
+      setIsUserLoggedIn(!!user);
+      setCurrentUser(user);
+    });
 
     // Secret shortcut: Ctrl+Shift+A opens secret admin login
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -249,6 +251,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('contextmenu', handleContextMenu);
+      unsubscribeAuth();
     };
   }, []);
 

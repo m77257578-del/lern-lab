@@ -1807,8 +1807,10 @@ export default function AdminDashboard({
                     type="text"
                     value={w.number}
                     onChange={(e) => {
+                      const val = e.target.value;
+                      if (w.id === 'orange-cash' && !/^\d*$/.test(val)) return;
                       const updated = [...wallets];
-                      updated[idx].number = e.target.value;
+                      updated[idx].number = val;
                       setWallets(updated);
                     }}
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-mono font-bold text-white"

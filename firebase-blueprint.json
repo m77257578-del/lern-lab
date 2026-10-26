@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A software project or platform available in the Lern Web marketplace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "titleAr": { "type": "string" },
+        "titleEn": { "type": "string" },
+        "isPublished": { "type": "boolean" },
+        "category": { "type": "string", "enum": ["lms", "stem", "ai", "operations"] }
+      },
+      "required": ["id", "titleAr", "titleEn", "category"]
+    },
+    "UserOrder": {
+      "title": "UserOrder",
+      "description": "An order placed by a user for a platform.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "planType": { "type": "string", "enum": ["monthly", "annual", "full"] },
+        "status": { "type": "string", "enum": ["pending", "active"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "planType", "status", "createdAt"]
+    },
+    "AiCustomizationDraft": {
+      "title": "AiCustomizationDraft",
+      "description": "An AI project customization request by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "visitorId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_review", "in_progress", "completed", "approved_published", "rejected"] },
+        "userPrompt": { "type": "string" },
+        "forkedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "visitorId", "status", "userPrompt", "forkedAt"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Projects collection"
+    },
+    "/orders/{orderId}": {
+      "schema": "UserOrder",
+      "description": "User orders collection"
+    },
+    "/drafts/{draftId}": {
+      "schema": "AiCustomizationDraft",
+      "description": "AI customization drafts collection"
+    }
+  }
+}
